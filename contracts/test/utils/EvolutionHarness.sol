@@ -15,9 +15,15 @@ contract EvolutionHarness is Evolution {
 
     Mode public mode;
 
-    constructor(IERC20 token_, address treasury_, uint256 minDeposit_, uint256 splitUnit_, Traits memory traits_)
-        Evolution(token_, treasury_, minDeposit_, splitUnit_, traits_)
-    {}
+    constructor(
+        IERC20 token_,
+        address treasury_,
+        uint256 minDeposit_,
+        uint256 minWithdraw_,
+        uint256 splitUnit_,
+        uint256 splitOdds_,
+        Traits memory traits_
+    ) Evolution(token_, treasury_, minDeposit_, minWithdraw_, splitUnit_, splitOdds_, traits_) {}
 
     function setMode(Mode m) external {
         mode = m;
@@ -27,9 +33,14 @@ contract EvolutionHarness is Evolution {
         return _half(x);
     }
 
-    function _rollSplit(uint256 nodeId, uint256 fill, uint256 halfFill) internal override returns (bool) {
+    /// @dev Runs the real two-layer roll for `fill` on the root's traits, without depositing.
+    function exposedRoll(uint256 fill) external returns (bool) {
+        return Evolution._rollSplit(ROOT, fill, _nodes[ROOT].traits);
+    }
+
+    function _rollSplit(uint256 nodeId, uint256 fill, Traits memory t) internal override returns (bool) {
         if (mode == Mode.Never) return false;
         if (mode == Mode.Always) return true;
-        return super._rollSplit(nodeId, fill, halfFill);
+        return super._rollSplit(nodeId, fill, t);
     }
 }

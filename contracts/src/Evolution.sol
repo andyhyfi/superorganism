@@ -5,10 +5,17 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @title Evolution v0: deposits, splits, withdrawals
 /// @notice A network of nodes that grows from one root. Users deposit a token into a live node.
-/// Each deposit rolls for a split; the chance rises with the node's fill and is never certain.
+///
+/// Every deposit can split its node, in two layers:
+/// 1. The roll chance comes from the node's fill (its token total after the deposit) on an
+///    S-curve: near zero for a small node, rising faster through the middle, and flattening
+///    toward a hard cap of at most 10%. With the default traits: 0.0001% at 1 USDC, 1% at
+///    100 USDC, about 9.2% at 1,000 USDC, never 10%.
+/// 2. A deposit that wins the roll chance then rolls a fixed 1-in-`splitOdds` (20) for the split.
 /// A split halves the node into two identical children, and every user's claim halves into each.
 /// Halves round down to a multiple of `splitUnit` (10 units = 0.00001 USDC, five decimals). The
 /// node's split remainder goes to the treasury with the fees.
@@ -29,7 +36,8 @@ contract Evolution is ReentrancyGuard {
     struct Traits {
         uint32 feePpm; // fee on deposits and withdrawals, parts per million
         uint8 fillMeasure; // what counts as fill; 0 = token amount (the only measure in v0)
-        uint128 splitHalfFill; // fill at which the split chance per deposit is 50%
+        uint32 rollCapPpm; // ceiling of the roll-chance curve, parts per million; at most 10%
+        uint128 rollMidFill; // fill at which the roll chance is half the cap
     }
 
     struct Node {
@@ -50,17 +58,23 @@ contract Evolution is ReentrancyGuard {
 
     uint256 public constant ROOT = 0;
     uint256 public constant PPM = 1_000_000;
+    uint256 public constant WAD = 1e18; // probabilities are scaled to 1e18
     uint32 public constant MAX_FEE_PPM = 10_000; // 1%
+    uint32 public constant MAX_ROLL_CAP_PPM = 100_000; // 10%
     uint8 public constant FILL_TOKEN_AMOUNT = 0;
     uint256 public constant MAX_BATCH = 50; // nodes per withdrawAll call
     uint256 public constant MAX_WALK = 128; // past 128 halvings any uint128 claim is zero
+    uint256 internal constant MAX_RATIO = 1e27; // fill / mid capped at 1e9 (scaled); chance is the cap there
+    uint256 internal constant PPM_TO_WAD = 1e12; // WAD / PPM, exact
 
     // ------------------------------------------------------------ immutables
 
     IERC20 public immutable token;
     address public immutable treasury;
     uint256 public immutable minDeposit;
+    uint256 public immutable minWithdraw; // a smaller withdrawal is allowed only when it closes the whole claim
     uint256 public immutable splitUnit; // halves round down to a multiple of this; 10 = five decimals for USDC
+    uint256 public immutable splitOdds; // second layer: a won roll splits 1 time in splitOdds
 
     // ---------------------------------------------------------------- state
 
@@ -75,6 +89,8 @@ contract Evolution is ReentrancyGuard {
 
     event Deposited(uint256 indexed nodeId, address indexed user, uint256 amount, uint256 fee);
     event Withdrawn(uint256 indexed nodeId, address indexed user, uint256 amount, uint256 fee);
+    /// @notice A deposit won the roll chance and rolled the 1-in-`splitOdds` for a split.
+    event SplitRolled(uint256 indexed nodeId, bool split);
     event Split(uint256 indexed parentId, uint256 child0, uint256 child1, uint32 depth);
     event FeesSwept(address indexed treasury, uint256 amount);
 
@@ -82,28 +98,44 @@ contract Evolution is ReentrancyGuard {
 
     error ZeroAddress();
     error InvalidTraits();
+    error InvalidSplitUnit();
+    error InvalidSplitOdds();
     error UnknownNode(uint256 nodeId);
     error NodeNotLive(uint256 nodeId);
     error BelowMinDeposit(uint256 amount, uint256 minDeposit);
+    error BelowMinWithdraw(uint256 amount, uint256 minWithdraw);
     error ZeroAmount();
     error InsufficientClaim(uint256 requested, uint256 available);
     error BatchTooLarge(uint256 length, uint256 max);
     error NothingToWithdraw();
-    error InvalidSplitUnit();
 
     // Lint notes, reviewed: the split roll's weak randomness is the documented v0 placeholder;
-    // the halving in _split rounds down on purpose and sends the remainder to the treasury.
+    // the halving in _split rounds down on purpose and sends the remainder to the treasury;
+    // the `% splitOdds == 0` draw is an intended exact match (Slither incorrect-equality);
+    // reentrancy-events on Split and SplitRolled is a false positive: both are emitted before
+    // the only external call, the token transfer at the end of deposit.
 
     // ---------------------------------------------------------- constructor
 
-    constructor(IERC20 token_, address treasury_, uint256 minDeposit_, uint256 splitUnit_, Traits memory rootTraits) {
+    constructor(
+        IERC20 token_,
+        address treasury_,
+        uint256 minDeposit_,
+        uint256 minWithdraw_,
+        uint256 splitUnit_,
+        uint256 splitOdds_,
+        Traits memory rootTraits
+    ) {
         if (address(token_) == address(0) || treasury_ == address(0)) revert ZeroAddress();
         if (splitUnit_ == 0) revert InvalidSplitUnit();
+        if (splitOdds_ == 0) revert InvalidSplitOdds();
         _validateTraits(rootTraits);
         token = token_;
         treasury = treasury_;
         minDeposit = minDeposit_ == 0 ? 1 : minDeposit_;
+        minWithdraw = minWithdraw_ == 0 ? 1 : minWithdraw_;
         splitUnit = splitUnit_;
+        splitOdds = splitOdds_;
 
         _nodes[ROOT] = Node({parent: 0, firstChild: 0, depth: 0, split: false, total: 0, traits: rootTraits});
         nodeCount = 1;
@@ -112,7 +144,7 @@ contract Evolution is ReentrancyGuard {
     // ------------------------------------------------------------- user API
 
     /// @notice Deposit `amount` into a live node. The fee goes to the treasury; the rest is the
-    /// caller's claim. The deposit then rolls for a split.
+    /// caller's claim. The deposit then rolls for a split, in two layers.
     function deposit(uint256 nodeId, uint256 amount) external nonReentrant {
         Node storage node = _live(nodeId);
         if (amount < minDeposit) revert BelowMinDeposit(amount, minDeposit);
@@ -127,7 +159,7 @@ contract Evolution is ReentrancyGuard {
 
         emit Deposited(nodeId, msg.sender, amount, fee);
 
-        if (_rollSplit(nodeId, node.total, node.traits.splitHalfFill)) {
+        if (_rollSplit(nodeId, node.total, node.traits)) {
             _split(nodeId, node);
         }
 
@@ -135,8 +167,13 @@ contract Evolution is ReentrancyGuard {
     }
 
     /// @notice Withdraw `amount` of the caller's claim from a live node, minus the node's fee.
+    /// `amount` must be at least `minWithdraw`, unless it is the caller's whole claim.
     function withdraw(uint256 nodeId, uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
+        _live(nodeId);
+        if (amount < minWithdraw && amount != _claim(nodeId, msg.sender)) {
+            revert BelowMinWithdraw(amount, minWithdraw);
+        }
         (uint256 payout, uint256 fee) = _take(nodeId, msg.sender, amount);
         feesAccrued += fee;
         token.safeTransfer(msg.sender, payout);
@@ -191,12 +228,18 @@ contract Evolution is ReentrancyGuard {
         return _positions[nodeId][user];
     }
 
-    /// @notice Split chance for the next deposit on `nodeId`, scaled to 1e18, given its fill
-    /// after that deposit. Pure function of the node's traits; for the UI.
+    /// @notice Layer one: the chance, scaled to 1e18, that a deposit leaving `nodeId` at
+    /// `fillAfter` gets to roll for a split. For the UI.
+    function rollChance(uint256 nodeId, uint256 fillAfter) external view returns (uint256) {
+        if (nodeId >= nodeCount) revert UnknownNode(nodeId);
+        return _rollChance(fillAfter, _nodes[nodeId].traits);
+    }
+
+    /// @notice Both layers: the chance, scaled to 1e18, that a deposit leaving `nodeId` at
+    /// `fillAfter` splits it. For the UI.
     function splitChance(uint256 nodeId, uint256 fillAfter) external view returns (uint256) {
         if (nodeId >= nodeCount) revert UnknownNode(nodeId);
-        uint256 half = _nodes[nodeId].traits.splitHalfFill;
-        return (fillAfter * 1e18) / (fillAfter + half);
+        return _rollChance(fillAfter, _nodes[nodeId].traits) / splitOdds;
     }
 
     // ------------------------------------------------------------ internals
@@ -298,19 +341,43 @@ contract Evolution is ReentrancyGuard {
         _nodes[c0] = child;
         _nodes[c0 + 1] = child;
 
+        // forge-lint: disable-next-line(reentrancy-events)
         emit Split(nodeId, c0, c0 + 1, depth);
     }
 
-    /// @dev Split roll. Succeeds with probability fill / (fill + halfFill), so never certain.
+    /// @dev Layer one, the roll-chance curve, scaled to 1e18:
+    ///     chance = cap * r^2 / (r^2 + 1),  where r = fill / rollMidFill.
+    /// The curve starts flat near zero (the square keeps small nodes almost never rolling),
+    /// rises fastest around the midpoint, and flattens toward the cap without reaching it.
+    /// With cap 10% and midpoint 300 USDC: 1 USDC -> 0.0001%, 100 USDC -> 1%, 300 USDC -> 5%,
+    /// 1,000 USDC -> about 9.2%.
+    function _rollChance(uint256 fill, Traits memory t) internal pure returns (uint256) {
+        if (fill == 0) return 0;
+        uint256 r = Math.mulDiv(fill, WAD, t.rollMidFill);
+        if (r > MAX_RATIO) r = MAX_RATIO;
+        uint256 r2 = r * r; // at most 1e54
+        return Math.mulDiv(uint256(t.rollCapPpm) * PPM_TO_WAD, r2, r2 + WAD * WAD);
+    }
+
+    /// @dev The split roll, in two layers with separate draws: layer one passes with the curve's
+    /// chance, then layer two splits 1 time in `splitOdds`.
     /// PLACEHOLDER randomness from block data: predictable and gameable by a contract caller
     /// that reverts on an unwanted result. Replace before real funds.
-    function _rollSplit(uint256 nodeId, uint256 fill, uint256 halfFill) internal virtual returns (bool) {
-        uint256 r = uint256(keccak256(abi.encode(block.prevrandao, block.number, nodeId, msg.sender, _nonce++)));
-        return r % (fill + halfFill) < fill;
+    function _rollSplit(uint256 nodeId, uint256 fill, Traits memory t) internal virtual returns (bool) {
+        uint256 seed = uint256(keccak256(abi.encode(block.prevrandao, block.number, nodeId, msg.sender, _nonce++)));
+        if (uint256(keccak256(abi.encode(seed, 1))) % WAD >= _rollChance(fill, t)) return false;
+        // slither-disable-next-line incorrect-equality
+        bool hit = uint256(keccak256(abi.encode(seed, 2))) % splitOdds == 0;
+        // forge-lint: disable-next-line(reentrancy-events)
+        emit SplitRolled(nodeId, hit);
+        return hit;
     }
 
     function _validateTraits(Traits memory t) internal pure {
-        if (t.feePpm > MAX_FEE_PPM || t.splitHalfFill == 0 || t.fillMeasure != FILL_TOKEN_AMOUNT) {
+        if (
+            t.feePpm > MAX_FEE_PPM || t.fillMeasure != FILL_TOKEN_AMOUNT || t.rollCapPpm > MAX_ROLL_CAP_PPM
+                || t.rollMidFill == 0
+        ) {
             revert InvalidTraits();
         }
     }

@@ -19,7 +19,9 @@ contract EvolutionFuzzTest is Test {
     }
 
     function _deploy(uint32 feePpm, uint256 splitUnit) internal returns (EvolutionHarness e) {
-        e = new EvolutionHarness(IERC20(address(usdc)), TREASURY, 1, splitUnit, Evolution.Traits(feePpm, 0, 1e12));
+        e = new EvolutionHarness(
+            IERC20(address(usdc)), TREASURY, 1, 1, splitUnit, 20, Evolution.Traits(feePpm, 0, 100_000, 300e6)
+        );
         e.setMode(EvolutionHarness.Mode.Never);
         address[2] memory u = [alice, bob];
         for (uint256 i = 0; i < 2; ++i) {
@@ -121,5 +123,16 @@ contract EvolutionFuzzTest is Test {
         }
         assertEq(e.claimOf(node, alice), expect);
         assertEq(e.getPosition(node, alice).set, false); // read lazily, never written
+    }
+
+    /// The roll chance never decreases with fill and never reaches the cap.
+    function testFuzz_rollChanceMonotonicAndCapped(uint256 a, uint256 b) public {
+        a = bound(a, 0, type(uint128).max);
+        b = bound(b, a, type(uint128).max);
+        EvolutionHarness e = _deploy(0, 10);
+        uint256 ca = e.rollChance(0, a);
+        uint256 cb = e.rollChance(0, b);
+        assertLe(ca, cb);
+        assertLe(cb, 0.1e18);
     }
 }

@@ -20,8 +20,11 @@ contract EvolutionInvariantTest is Test {
 
     function setUp() public {
         usdc = new MockUSDC();
-        // A high fee (1%) makes fee rounding visible; a small half-fill makes real rolls split often.
-        evo = new EvolutionHarness(IERC20(address(usdc)), TREASURY, 1, SPLIT_UNIT, Evolution.Traits(10_000, 0, 50e6));
+        // A high fee (1%) makes fee rounding visible. Forced splits drive the tree; the real roll
+        // runs too, with the production curve and odds.
+        evo = new EvolutionHarness(
+            IERC20(address(usdc)), TREASURY, 1, 1, SPLIT_UNIT, 20, Evolution.Traits(10_000, 0, 100_000, 300e6)
+        );
         for (uint256 i = 0; i < 5; ++i) {
             actors.push(makeAddr(string(abi.encodePacked("actor", vm.toString(i)))));
         }
