@@ -33,6 +33,13 @@ export default function App() {
     if (!canvas) return
     const field = new Field(canvas, you.address)
     fieldRef.current = field
+    // Keeps the node panel pinned to its node. Wired here, with the field it belongs to, so a
+    // remount (React dev mode, hot reload) can never leave a field without it.
+    field.onFrame = () => {
+      if (field.selected == null) return setAnchor(a => (a ? null : a))
+      const s = field.screenOf(field.selected)
+      setAnchor(prev => (s && prev && Math.abs(prev.x - s.x) < 0.5 && Math.abs(prev.y - s.y) < 0.5 && Math.abs(prev.r - s.r) < 0.5 ? prev : s))
+    }
     let cancelled = false
     let cursor = 0n
 
@@ -102,17 +109,6 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const field = fieldRef.current
-    if (!field) return
-    field.onFrame = () => {
-      if (field.selected == null) return setAnchor(a => (a ? null : a))
-      const s = field.screenOf(field.selected)
-      setAnchor(prev => (s && prev && Math.abs(prev.x - s.x) < 0.5 && Math.abs(prev.y - s.y) < 0.5 && Math.abs(prev.r - s.r) < 0.5 ? prev : s))
-    }
-    return () => { field.onFrame = null }
-  }, [stats.block === 0n])
-
-  useEffect(() => {
     if (sel == null) return
     const id = sel.id
     const timer = setInterval(() => {
@@ -128,6 +124,7 @@ export default function App() {
     const rect = (e.target as HTMLElement).getBoundingClientRect()
     const hit = field.pick(e.clientX - rect.left, e.clientY - rect.top)
     field.selected = hit?.id ?? null
+    setAnchor(hit ? field.screenOf(hit.id) : null) // place now; frames keep it pinned after
     if (hit) refreshSelected(hit.id)
     else setSel(null)
   }
