@@ -7,7 +7,9 @@ import type { ChainNode, NetEvent } from './chain'
 import { NodeTab, NetworkTab, YoursTab, FeedTab } from './Tabs'
 import { attachSheetDrag } from './sheetDrag'
 import { useEffect, useRef } from 'react'
+import { t } from './reveal'
 import './deep.css'
+import './cell.css'
 
 export type Tab = 'node' | 'network' | 'yours' | 'feed'
 export type Sheet = 'peek' | 'half' | 'full'
@@ -39,10 +41,10 @@ export type DeepProps = {
 }
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'node', label: 'Node' },
-  { id: 'network', label: 'Network' },
-  { id: 'yours', label: 'Yours' },
-  { id: 'feed', label: 'Activity' },
+  { id: 'node', label: t('tab.node') },
+  { id: 'network', label: t('tab.network') },
+  { id: 'yours', label: t('tab.yours') },
+  { id: 'feed', label: t('tab.activity') },
 ]
 
 export function Deep(p: DeepProps) {
@@ -57,20 +59,20 @@ export function Deep(p: DeepProps) {
   }, [p.narrow, p.setSheet])
 
   return (
-    <aside ref={ref} className={p.narrow ? `deep sheet ${p.sheet}` : 'deep side'} aria-label="Details">
+    <aside ref={ref} className={p.narrow ? `deep membrane sheet ${p.sheet}` : 'deep membrane side'} aria-label="Details">
       {p.narrow && <div ref={grab} className="grabber" role="slider" aria-label="Drag to resize" aria-valuetext={p.sheet} />}
       <div className="head">
-        <div className="segmented" role="tablist">
-          {TABS.map(t => (
+        <div className="segmented membrane" role="tablist">
+          {TABS.map(x => (
             <button
-              key={t.id}
+              key={x.id}
               role="tab"
-              aria-selected={p.tab === t.id}
-              onClick={() => { p.setTab(t.id); if (p.narrow && p.sheet === 'peek') p.setSheet('half') }}
-            >{t.label}</button>
+              aria-selected={p.tab === x.id}
+              onClick={() => { p.setTab(x.id); if (p.narrow && p.sheet === 'peek') p.setSheet('half') }}
+            >{x.label}</button>
           ))}
         </div>
-        <button className="close" aria-label="Close" onClick={p.onClose}><X size={16} strokeWidth={2.5} /></button>
+        <button className="close cell-quiet" aria-label="Close" onClick={p.onClose}><X size={16} strokeWidth={2.5} /></button>
       </div>
       <div className="body">
         {p.tab === 'node' && <NodeTab {...p} />}

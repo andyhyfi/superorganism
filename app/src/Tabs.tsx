@@ -1,84 +1,110 @@
-// The four Deep tabs. Each leads with one big number, then grouped inset lists.
-import { useState } from 'react'
+// The four Deep tabs. Words come from reveal.ts (t), and every optional section asks shown()
+// first, so what a player sees can be gated by holdings, deposits, or mutations.
+import { useState, type ReactNode } from 'react'
 import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Inbox } from 'lucide-react'
 import type { DeepProps } from './Deep'
 import { fmtPct, fmtUsd, short } from './format'
+import { shown, t, type Ctx, type InfoId } from './reveal'
+
+const usdNum = (x: bigint) => Number(x) / 1e6
+
+/** What the player has done, for reveal rules. */
+export function playerCtx(p: DeepProps, heldHere = 0n): Ctx {
+  const me = p.you.toLowerCase()
+  const heldTotal = [...p.claims.values()].reduce((a, c) => a + c, 0n)
+  const deposits = p.feed.filter(e => e.kind === 'deposit' && e.user.toLowerCase() === me).length
+  return { heldHere: usdNum(heldHere), heldTotal: usdNum(heldTotal), deposits, traits: [] }
+}
+
+/** Renders children only when the rule for `id` passes. */
+function Gate({ id, c, children }: { id: InfoId; c: Ctx; children: ReactNode }) {
+  return shown(id, c) ? <>{children}</> : null
+}
+
+/** Press animation: a pulse outward, like a deposit landing in a cell. */
+const pulse = (e: React.MouseEvent<HTMLButtonElement>) => {
+  const b = e.currentTarget
+  b.classList.remove('pulse'); void b.offsetWidth; b.classList.add('pulse')
+}
 
 // --------------------------------------------------------------------- node
 
 export function NodeTab(p: DeepProps) {
   const s = p.selected
-  if (!s) return <Empty title="No node selected" text="Tap a cell in the network to see it here." />
+  if (!s) return <Empty title={t('empty.noCell')} text={t('empty.noCellHint')} />
+  const c = playerCtx(p, s.claim)
   const node = p.nodes[s.id]
   const lineage: number[] = []
   for (let n = node; n && n.id !== 0; n = p.nodes[n.parent]) lineage.unshift(n.id)
   lineage.unshift(0)
   const amt = Number(p.amount)
   const amountOk = Number.isFinite(amt) && amt >= 1 && BigInt(Math.round(amt * 1e6)) <= p.wallet
+  const max = Math.floor(Number(p.wallet) / 1e6)
   const set = (v: number) => p.setAmount(String(v))
 
   return (
     <>
       <div className="hero">
         <div className="label">
-          <span>Node {s.id} balance</span>
-          <button className="text-btn" onClick={() => p.onFocus(s.id)}>Show on map</button>
+          <span>{t('cell.balance')}</span>
+          <button className="text-btn" onClick={() => p.onFocus(s.id)}>{t('cell.showOnMap')}</button>
         </div>
         <div className="big">{fmtUsd(s.total)}<small>USDC</small></div>
-        {s.claim > 0n && <div className="meta">You hold <span className="gold">{fmtUsd(s.claim)} USDC</span> here</div>}
+        <Gate id="cell.yourShare" c={c}>
+          <div className="meta">{t('cell.yourShare')} <span className="gold">{fmtUsd(s.claim)}</span></div>
+        </Gate>
       </div>
 
-      <div className="amount">
-        <input value={p.amount} onChange={e => p.setAmount(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" aria-label="Amount" placeholder="0" />
+      <div className="amount membrane">
+        <input value={p.amount} onChange={e => p.setAmount(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" aria-label={t('act.amount')} placeholder="0" />
         <span className="unit">USDC</span>
       </div>
       <div className="quick">
-        {[10, 50, 100].map(v => <button key={v} aria-pressed={amt === v} onClick={() => set(v)}>{v}</button>)}
-        <button aria-pressed={amt === Math.floor(Number(p.wallet) / 1e6)} onClick={() => set(Math.floor(Number(p.wallet) / 1e6))}>Max</button>
+        {[10, 50, 100].map(v => <button key={v} className="cell-quiet" aria-pressed={amt === v} onClick={() => set(v)}>{v}</button>)}
+        <button className="cell-quiet" aria-pressed={amt === max && max > 0} onClick={() => set(max)}>{t('act.max')}</button>
       </div>
       <div className="buttons">
-        <button className="btn" disabled={!!p.busy || !amountOk} onClick={p.onDeposit}>
-          {p.busy === 'deposit' ? 'Depositing…' : 'Deposit'}
+        <button className="btn cell-btn" disabled={!!p.busy || !amountOk} onClick={e => { pulse(e); p.onDeposit() }}>
+          {p.busy === 'deposit' ? t('act.depositing') : t('act.deposit')}
         </button>
         {s.claim > 0n && (
-          <button className="btn secondary" disabled={!!p.busy} onClick={p.onWithdraw}>
-            {p.busy === 'withdraw' ? 'Withdrawing…' : `Withdraw ${fmtUsd(s.claim)}`}
+          <button className="btn cell-quiet" disabled={!!p.busy} onClick={e => { pulse(e); p.onWithdraw() }}>
+            {p.busy === 'withdraw' ? t('act.withdrawing') : `${t('act.withdraw')} ${fmtUsd(s.claim)}`}
           </button>
         )}
       </div>
 
-      <div className="section-title">Chance this cell divides</div>
-      <div className="group">
-        <Cell k="On your next deposit" v={fmtPct(s.split)} />
-        <Cell k="Fill check passes" v={fmtPct(s.roll)} />
-        <Cell k="Then divides" v={`1 in ${p.odds}`} />
-      </div>
-      <p className="foot">Fuller cells are more likely to divide. When one does, every balance in it is split evenly between the two new cells.</p>
+      <Gate id="cell.divideChance" c={c}>
+        <div className="section-title">{t('cell.divideChance')}</div>
+        <div className="group membrane">
+          <Row k={t('cell.divideChance')} v={fmtPct(s.split)} />
+          <Gate id="cell.fillCheck" c={c}><Row k={t('cell.fillCheck')} v={fmtPct(s.roll)} /></Gate>
+          <Gate id="cell.divideOdds" c={c}><Row k={t('cell.divideOdds')} v={`1 in ${p.odds}`} /></Gate>
+        </div>
+        <Gate id="cell.divideExplainer" c={c}><p className="foot">{t('cell.divideExplainer')}</p></Gate>
+      </Gate>
 
-      <div className="section-title">Details</div>
-      <div className="group">
-        <Cell k="Generation" v={String(node?.depth ?? 0)} />
-        <Cell k="Fee" v={`${((node?.traits.feePpm ?? 0) / 1e4).toFixed(4)}%`} />
-        <Cell k="Minimum" v="1 USDC" />
+      <div className="section-title">&nbsp;</div>
+      <div className="group membrane">
+        <Gate id="cell.generation" c={c}><Row k={t('cell.generation')} v={String(node?.depth ?? 0)} /></Gate>
+        <Row k={t('cell.fee')} v={`${((node?.traits.feePpm ?? 0) / 1e4).toFixed(4)}%`} />
+        <Row k={t('cell.minimum')} v="1 USDC" />
       </div>
 
-      <div className="section-title">Lineage</div>
-      <div className="group">
-        <div className="chips">
-          {lineage.map((id, i) => {
-            const here = id === s.id
-            return (
+      <Gate id="cell.lineage" c={c}>
+        <div className="section-title">{t('cell.lineage')}</div>
+        <div className="group membrane">
+          <div className="chips">
+            {lineage.map((id, i) => (
               <span key={id} style={{ display: 'contents' }}>
                 {i > 0 && <ChevronRight size={14} className="arrow" />}
-                <span className="chip" aria-current={here} style={{ display: 'inline-flex', alignItems: 'center' }}>
-                  {id === 0 ? 'Origin' : `Node ${id}`}
-                </span>
+                <span className="chip cell-quiet" aria-current={id === s.id}>{id}</span>
               </span>
-            )
-          })}
+            ))}
+          </div>
         </div>
-      </div>
-      <p className="foot">Each cell came from its parent dividing. Earlier generations no longer hold funds.</p>
+        <p className="foot">{t('cell.lineageExplainer')}</p>
+      </Gate>
     </>
   )
 }
@@ -89,6 +115,7 @@ type SortKey = 'total' | 'depth' | 'id'
 
 export function NetworkTab(p: DeepProps) {
   const [sort, setSort] = useState<SortKey>('total')
+  const c = playerCtx(p)
   const live = p.nodes.filter(n => !n.split)
   const total = live.reduce((a, n) => a + n.total, 0n)
   const maxDepth = live.reduce((a, n) => Math.max(a, n.depth), 0)
@@ -96,37 +123,44 @@ export function NetworkTab(p: DeepProps) {
   const rows = [...live].sort((a, b) =>
     sort === 'total' ? Number(b.total - a.total) : sort === 'id' ? a.id - b.id : b.depth - a.depth || a.id - b.id,
   )
+  const meta = [
+    `${live.length} ${t('net.counts')}`,
+    shown('net.splits', c) && `${(p.nodes.length - 1) / 2} ${t('net.splits')}`,
+    shown('net.generations', c) && `${maxDepth} ${t('net.generations')}`,
+  ].filter(Boolean).join(' · ')
   return (
     <>
       <div className="hero">
-        <div className="label"><span>Held across the network</span></div>
+        <div className="label"><span>{t('net.held')}</span></div>
         <div className="big">{fmtUsd(total)}<small>USDC</small></div>
-        <div className="meta">{live.length} cells · {(p.nodes.length - 1) / 2} splits · {maxDepth} generations</div>
+        <div className="meta">{meta}</div>
       </div>
 
-      <div className="segmented" role="tablist" style={{ marginBottom: 12 }}>
-        {(['total', 'depth', 'id'] as SortKey[]).map(k => (
-          <button key={k} role="tab" aria-selected={sort === k} onClick={() => setSort(k)}>
-            {k === 'total' ? 'Largest' : k === 'depth' ? 'Newest' : 'Oldest'}
-          </button>
-        ))}
-      </div>
+      <Gate id="net.sort" c={c}>
+        <div className="segmented membrane" role="tablist" style={{ marginBottom: 12 }}>
+          {(['total', 'depth', 'id'] as SortKey[]).map(k => (
+            <button key={k} role="tab" aria-selected={sort === k} onClick={() => setSort(k)}>
+              {k === 'total' ? 'Largest' : k === 'depth' ? 'Newest' : 'Oldest'}
+            </button>
+          ))}
+        </div>
+      </Gate>
 
-      <div className="group">
+      <div className="group membrane">
         {rows.map(n => (
           <button key={n.id} className="cell" onClick={() => p.onSelect(n.id)}>
-            <span style={{ width: 44 }} className="num">#{n.id}</span>
+            <span style={{ width: 44 }} className="num">{n.id}</span>
             <span className="meter"><span style={{ width: `${Math.max(3, Number((n.total * 100n) / max))}%` }} /></span>
             <span className="v num" style={{ width: 84, textAlign: 'right' }}>{fmtUsd(n.total)}</span>
-            {(p.claims.get(n.id) ?? 0n) > 0n ? <span className="mark" aria-label="You hold funds here" /> : <span style={{ width: 8 }} />}
+            {(p.claims.get(n.id) ?? 0n) > 0n ? <span className="mark" /> : <span style={{ width: 8 }} />}
           </button>
         ))}
       </div>
 
-      <div className="section-title">Protocol</div>
-      <div className="group">
-        <Cell k="Fees collected" v={`${fmtUsd(p.fees)} USDC`} />
-      </div>
+      <Gate id="net.fees" c={c}>
+        <div className="section-title">&nbsp;</div>
+        <div className="group membrane"><Row k={t('net.fees')} v={`${fmtUsd(p.fees)} USDC`} /></div>
+      </Gate>
     </>
   )
 }
@@ -139,29 +173,28 @@ export function YoursTab(p: DeepProps) {
   return (
     <>
       <div className="hero">
-        <div className="label"><span>Your balance in the network</span></div>
+        <div className="label"><span>{t('you.balance')}</span></div>
         <div className="big">{fmtUsd(sum)}<small>USDC</small></div>
-        <div className="meta">{fmtUsd(p.wallet)} USDC in your wallet</div>
+        <div className="meta">{fmtUsd(p.wallet)} USDC {t('you.wallet')}</div>
       </div>
       {!held.length ? (
-        <Empty title="Nothing deposited yet" text="Tap a cell and deposit to join the network." />
+        <Empty title={t('you.empty')} text={t('you.emptyHint')} />
       ) : (
         <>
-          <div className="group">
+          <div className="group membrane">
             {held.map(([id, c]) => (
               <button key={id} className="cell" onClick={() => p.onSelect(id)}>
-                <span className="k">Node {id}<span className="sub">Generation {p.nodes[id]?.depth ?? 0}</span></span>
+                <span className="k">{id}</span>
                 <span className="v strong gold">{fmtUsd(c)}</span>
                 <ChevronRight size={16} className="chev" />
               </button>
             ))}
           </div>
           <div className="buttons">
-            <button className="btn" disabled={!!p.busy} onClick={p.onWithdrawAll}>
-              {p.busy === 'withdrawAll' ? 'Withdrawing…' : held.length > 1 ? `Withdraw all from ${held.length} nodes` : 'Withdraw all'}
+            <button className="btn cell-btn" disabled={!!p.busy} onClick={e => { pulse(e); p.onWithdrawAll() }}>
+              {p.busy === 'withdrawAll' ? t('act.withdrawing') : t('act.withdrawAll')}
             </button>
           </div>
-          {held.length > 50 && <p className="foot">Sent as {Math.ceil(held.length / 50)} transactions.</p>}
         </>
       )}
     </>
@@ -171,23 +204,26 @@ export function YoursTab(p: DeepProps) {
 // --------------------------------------------------------------------- feed
 
 export function FeedTab(p: DeepProps) {
+  const c = playerCtx(p)
   const me = p.you.toLowerCase()
-  if (!p.feed.length) return <Empty title="Quiet for now" text="Deposits, withdrawals, and splits appear here live." />
+  const others = shown('feed.others', c)
+  const rows = p.feed.filter(e => others || (e.kind !== 'split' && e.user.toLowerCase() === me)).slice(0, 80)
+  if (!rows.length) return <Empty title={t('feed.empty')} text="" />
   return (
-    <div className="group" style={{ marginTop: 8 }}>
-      {p.feed.slice(0, 80).map(e => {
+    <div className="group membrane" style={{ marginTop: 8 }}>
+      {rows.map(e => {
         const target = e.kind === 'split' ? e.c0 : e.node
-        const who = e.kind !== 'split' && e.user.toLowerCase() === me ? 'You' : e.kind !== 'split' ? short(e.user) : ''
+        const mine = e.kind !== 'split' && e.user.toLowerCase() === me
         return (
           <button key={e.key} className="cell" onClick={() => !p.nodes[target]?.split && p.onSelect(target)}>
             {e.kind === 'deposit' && <span className="badge in"><ArrowDownLeft size={16} strokeWidth={2.25} /></span>}
             {e.kind === 'withdraw' && <span className="badge out"><ArrowUpRight size={16} strokeWidth={2.25} /></span>}
             {e.kind === 'split' && <span className="badge split"><GitFork size={16} strokeWidth={2.25} /></span>}
             <span className="k">
-              {e.kind === 'split' ? `Node ${e.parent} split` : e.kind === 'deposit' ? 'Deposit' : 'Withdrawal'}
-              <span className="sub">{e.kind === 'split' ? `Into ${e.c0} and ${e.c1}` : `${who} · node ${e.node}`}</span>
+              {e.kind === 'split' ? t('feed.split') : e.kind === 'deposit' ? t('feed.deposit') : t('feed.withdraw')}
+              <span className="sub">{e.kind === 'split' ? `${e.parent} → ${e.c0}, ${e.c1}` : `${mine ? 'You' : short(e.user)} · ${e.node}`}</span>
             </span>
-            {e.kind !== 'split' && <span className={who === 'You' ? 'v strong gold' : 'v'}>{e.kind === 'withdraw' ? '−' : '+'}{fmtUsd(e.amount)}</span>}
+            {e.kind !== 'split' && <span className={mine ? 'v strong gold' : 'v'}>{e.kind === 'withdraw' ? '−' : '+'}{fmtUsd(e.amount)}</span>}
           </button>
         )
       })}
@@ -197,11 +233,11 @@ export function FeedTab(p: DeepProps) {
 
 // ------------------------------------------------------------------- shared
 
-function Cell({ k, v, strong }: { k: string; v: string; strong?: boolean }) {
+function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="cell">
       <span className="k">{k}</span>
-      <span className={strong ? 'v strong' : 'v'}>{v}</span>
+      <span className="v">{v}</span>
     </div>
   )
 }
@@ -211,7 +247,7 @@ function Empty({ title, text }: { title: string; text: string }) {
     <div className="empty">
       <Inbox size={28} strokeWidth={1.75} style={{ color: 'var(--text-3)', marginBottom: 10 }} />
       <div className="t">{title}</div>
-      <div>{text}</div>
+      {text && <div>{text}</div>}
     </div>
   )
 }

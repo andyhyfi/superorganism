@@ -9,7 +9,12 @@ import { attachGestures } from './gestures'
 import { Deep, type Tab, type Sheet, type SelectedInfo } from './Deep'
 import { fmtUsd } from './format'
 import { Plus, Minus, Maximize2, LayoutList, Waves } from 'lucide-react'
+import { installCellTexture } from './cellTexture'
+import { isRevealAll, setRevealAll } from './reveal'
 import './app.css'
+import './cell.css'
+
+installCellTexture()
 
 type Mode = 'aquarium' | 'deep'
 const NARROW = '(max-width: 720px)'
@@ -38,6 +43,7 @@ export default function App() {
   const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches)
   const [chrome, setChrome] = useState(true) // Aquarium's light overlay; H toggles
   const [idle, setIdle] = useState(false)
+  const [, setReveal] = useState(0) // dev: re-render after toggling reveal-all
 
   const refreshMine = async (all: ChainNode[]) => {
     const live = all.filter(n => !n.split).map(n => n.id)
@@ -197,6 +203,7 @@ export default function App() {
       if (k === 'tab') { e.preventDefault(); setMode(m => (m === 'deep' ? 'aquarium' : 'deep')) }
       else if (k === 'escape') { if (field?.selected != null) select(null); else setMode('aquarium') }
       else if (k === 'h') setChrome(c => !c)
+      else if (k === 'r' && import.meta.env.DEV) { setRevealAll(!isRevealAll()); setReveal(v => v + 1) }
       else if (k === 'f') field?.fitAll()
       else if (k === 'c' && field?.selected != null) field.focus(field.selected)
       else if (k === '=' || k === '+') field?.zoomBy(1.25)
@@ -228,7 +235,7 @@ export default function App() {
   const live = nodes.filter(n => !n.split).length
   const overlay = mode === 'aquarium' && chrome && !idle
   const ctrlCls = [
-    'controls glass',
+    'controls glass membrane',
     mode === 'deep' || overlay ? '' : 'hidden',
     mode === 'deep' && !narrow ? 'side-open' : '',
     mode === 'deep' && narrow ? `sheet-${sheet}` : '',
@@ -239,11 +246,11 @@ export default function App() {
       <canvas ref={canvasRef} className="field" />
 
       <div className={`top ${overlay ? '' : 'hidden'}`}>
-        <span className="pill glass">
+        <span className="pill glass membrane">
           {live} {live === 1 ? 'cell' : 'cells'}
           <span className="sub">{PRESET === 'demo' ? 'Local · demo odds' : 'Local'}</span>
         </span>
-        <span className="pill glass">
+        <span className="pill glass membrane">
           {held > 0n && <span className="dot" />}
           <span className="num">{fmtUsd(held > 0n ? held : wallet)}</span>
           <span className="sub">{held > 0n ? 'in network' : 'USDC'}</span>
@@ -255,7 +262,7 @@ export default function App() {
         <button aria-label="Fit network" onClick={() => fieldRef.current?.fitAll()}><Maximize2 size={18} strokeWidth={2.25} /></button>
         <button aria-label="Zoom in" onClick={() => fieldRef.current?.zoomBy(1.25)}><Plus size={20} strokeWidth={2.25} /></button>
         <span className="divider" />
-        <button className="primary" onClick={() => setMode(m => (m === 'deep' ? 'aquarium' : 'deep'))}>
+        <button className="primary cell-btn" onClick={() => setMode(m => (m === 'deep' ? 'aquarium' : 'deep'))}>
           {mode === 'deep' ? <><Waves size={18} strokeWidth={2.25} />Watch</> : <><LayoutList size={18} strokeWidth={2.25} />Details</>}
         </button>
       </div>

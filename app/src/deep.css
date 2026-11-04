@@ -1,11 +1,11 @@
 /* Deep mode panel: side sheet on desktop, bottom sheet on phones. iOS grouped-list idiom. */
 
+.deep.membrane { position: absolute; }
 .deep {
   position: absolute; display: flex; flex-direction: column; overflow: hidden;
   background: rgba(30, 32, 48, 0.42);
   backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%);
-  border: 0.5px solid rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.14), 0 24px 60px rgba(0, 0, 0, 0.45);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
   --pad: 16px;
 }
 .deep.side {
@@ -36,7 +36,7 @@
 .sheet .head { padding-top: 2px; }
 .segmented {
   flex: 1; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 2px; gap: 0;
-  border-radius: 10px; background: rgba(118, 118, 128, 0.24); position: relative;
+  border-radius: 10px; background: rgba(118, 118, 128, 0.18); position: relative;
 }
 .segmented button {
   height: 30px; border: 0; border-radius: 8px; background: none; cursor: pointer;
@@ -44,10 +44,10 @@
   transition: color 0.2s;
 }
 .segmented button { color: var(--text-2); }
-.segmented button[aria-selected='true'] { color: var(--text); background: rgba(99, 99, 102, 0.75); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12); font-weight: 600; }
+.segmented button[aria-selected='true'] { color: #fff; background: radial-gradient(120% 140% at 28% 20%, hsla(204, 85%, 66%, 0.55), hsla(220, 80%, 42%, 0.6)); box-shadow: 0 3px 8px rgba(0, 0, 0, 0.12); font-weight: 600; }
 .close {
   flex: none; width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 50%;
-  background: rgba(118, 118, 128, 0.24); color: var(--text-2); cursor: pointer;
+  color: var(--text-2); cursor: pointer;
 }
 .close:hover { color: var(--text); }
 
@@ -69,7 +69,8 @@
 
 /* grouped inset list */
 .section-title { font-size: 13px; color: var(--text-2); padding: 0 0 6px 16px; margin-top: 24px; }
-.group { border-radius: 12px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
+.group { border-radius: 12px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
+.group.membrane { position: relative; }
 .cell {
   display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 10px 16px; width: 100%;
   border: 0; background: none; text-align: left; position: relative; color: var(--text); font-size: 15px;
@@ -92,18 +93,17 @@ button.cell:active { background: var(--fill-2); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; }
 .chip {
   height: 28px; padding: 0 12px; border-radius: 999px; border: 0;
-  background: var(--fill-2); color: var(--text); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums;
+  display: inline-flex; align-items: center; color: var(--text); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums;
 }
-.chip[aria-current='true'] { background: var(--accent); color: #fff; }
 .chip:disabled { cursor: default; }
 .chips .arrow { color: var(--text-3); align-self: center; }
 
 /* amount entry */
 .amount {
   display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 15px; border-radius: 12px;
-  background: rgba(255, 255, 255, 0.08); border: 1px solid transparent; transition: border-color 0.2s;
+  background: rgba(255, 255, 255, 0.06);
 }
-.amount:focus-within { border-color: var(--accent); }
+.amount:focus-within::after { animation-duration: 6s; filter: brightness(1.6); }
 .amount input {
   flex: 1; min-width: 0; border: 0; outline: none; background: none; color: var(--text); caret-color: var(--accent);
   font: 600 22px/1 var(--font); font-variant-numeric: tabular-nums; user-select: text; -webkit-user-select: text;
@@ -111,20 +111,16 @@ button.cell:active { background: var(--fill-2); }
 .amount .unit { color: var(--text-2); font-size: 15px; }
 .quick { display: flex; gap: 8px; margin-top: 10px; }
 .quick button {
-  flex: 1; height: 34px; border-radius: 999px; border: 0; cursor: pointer; background: var(--fill);
+  flex: 1; height: 34px; border-radius: 999px; border: 0; cursor: pointer;
   color: var(--text); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums;
 }
-.quick button:active { background: var(--fill-2); }
-.quick button[aria-pressed='true'] { background: #fff; color: #000; }
 
 .buttons { display: flex; flex-direction: column; gap: 10px; margin-top: 20px; }
 .btn {
   height: 50px; border-radius: 12px; border: 0; cursor: pointer; font-size: 17px; font-weight: 600;
-  background: var(--accent); color: #fff; transition: opacity 0.15s, transform 0.15s;
+  color: #fff;
 }
-.btn:active { transform: scale(0.98); }
-.btn.secondary { background: var(--fill-2); color: var(--text); }
-.btn:disabled { background: rgba(255, 255, 255, 0.08); color: var(--text-3); cursor: default; transform: none; }
+.btn.cell-quiet { color: var(--text); }
 
 .foot { font-size: 13px; color: var(--text-3); padding: 8px 16px 0; }
 .empty { text-align: center; padding: 48px 20px; color: var(--text-2); }
