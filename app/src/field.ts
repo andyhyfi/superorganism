@@ -1,7 +1,9 @@
-// The glow field: Canvas 2D renderer for the network. Ported from the approved look test
+// The glow field: the network's simulation and camera. Drawing goes through Painter
+// (PixiJS / WebGL, baked textures) so phones stay smooth. Look ported from the approved look test
 // (private/sketches/look-test.html, look A). Chain state drives it; it never invents nodes.
 import type { Address } from 'viem'
 import type { ChainNode, NetEvent } from './chain'
+import { Painter, hsl } from './painter'
 
 const TAU = Math.PI * 2
 const rand = (a: number, b: number) => a + Math.random() * (b - a)
@@ -30,7 +32,7 @@ type VNode = {
 export type Pick = { id: number; total: number } | null
 
 export class Field {
-  private ctx: CanvasRenderingContext2D
+  private paint: Painter
   private W = 0
   private H = 0
   private t = 0
@@ -51,12 +53,15 @@ export class Field {
   selected: number | null = null
   onFrame: (() => void) | null = null
 
-  constructor(private canvas: HTMLCanvasElement, you: Address) {
-    const ctx = canvas.getContext('2d')
-    if (!ctx) throw new Error('Canvas 2D is not available')
-    this.ctx = ctx
+  constructor(private host: HTMLElement, you: Address) {
+    this.paint = new Painter(host)
     this.you = you.toLowerCase()
     this.resize()
+  }
+
+  /** Resolves once the GPU renderer is up. */
+  get ready() {
+    return this.paint.init
   }
 
   // ------------------------------------------------------------ lifecycle
@@ -79,13 +84,14 @@ export class Field {
     cancelAnimationFrame(this.raf)
   }
 
+  destroy() {
+    this.stop()
+    this.paint.destroy()
+  }
+
   resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
-    this.W = this.canvas.clientWidth
-    this.H = this.canvas.clientHeight
-    this.canvas.width = Math.round(this.W * dpr)
-    this.canvas.height = Math.round(this.H * dpr)
-    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    this.W = this.host.clientWidth
+    this.H = this.host.clientHeight
   }
 
   // ----------------------------------------------------------- chain sync
@@ -416,77 +422,81 @@ export class Field {
     return 1 + 0.018 * Math.sin(ang * 3 + t * 0.7 + n.phase) * k + 0.012 * Math.sin(ang * 5 - t * 0.5 + n.phase * 2) * k
   }
 
-  private membranePath(n: VNode, x: number, y: number, r: number, k = 1) {
-    const ctx = this.ctx
-    ctx.beginPath()
-    for (let i = 0; i <= 120; i++) {
-      const a = (i / 120) * TAU
+  /** The membrane outline as a flat point list, gently wobbling (and pinched while dividing). */
+  private membranePts(n: VNode, x: number, y: number, r: number, k = 1): number[] {
+    const pts: number[] = []
+    const steps = r > 60 ? 96 : r > 20 ? 64 : 32
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * TAU
       const rr = (this.shapeFn ? this.shapeFn(a) * (r / this.shapeR0) : r) * this.wob(n, a, k)
-      const px = x + Math.cos(a) * rr, py = y + Math.sin(a) * rr
-      if (i) ctx.lineTo(px, py)
-      else ctx.moveTo(px, py)
+      pts.push(x + Math.cos(a) * rr, y + Math.sin(a) * rr)
     }
-    ctx.closePath()
+    return pts
   }
 
   private background() {
-    const { ctx, W, H, t } = this
-    const g = ctx.createRadialGradient(W / 2, H / 2, 0, W / 2, H / 2, Math.max(W, H) * 0.75)
-    g.addColorStop(0, '#080c22'); g.addColorStop(0.6, '#04060f'); g.addColorStop(1, '#000001')
-    ctx.fillStyle = g
-    ctx.fillRect(0, 0, W, H)
+    const { W, H, t, paint } = this
+    paint.begin(W, H)
     for (const d of this.dust) {
       const x = (((d.x * W + t * 3 * d.z) % W) + W) % W
       const y = (((d.y * H + t * 1.2 * d.z) % H) + H) % H
       const a = (0.15 + 0.25 * (0.5 + 0.5 * Math.sin(t * 0.8 + d.tw))) * d.z
-      ctx.fillStyle = `rgba(170,200,255,${a})`
-      ctx.fillRect(x, y, d.z * 1.3, d.z * 1.3)
+      paint.dust(x, y, d.z * 1.3, a)
     }
   }
 
-  private drawNode(n: VNode, x: number, y: number, r: number, alpha: number, selected: boolean) {
+  private drawNode(
+    n: VNode, x: number, y: number, r: number, alpha: number, selected: boolean,
+    lobes?: { ux: number; uy: number; off: number },
+  ) {
     if (alpha <= 0.01 || r < 0.5) return
-    const { ctx } = this
+    // off screen: skip (glow reaches 2.1r, plus a dividing cell's lobe offset)
+    const reach = r * 2.1 + (lobes?.off ?? 0)
+    if (x + reach < 0 || y + reach < 0 || x - reach > this.W || y - reach > this.H) return
+    const { paint } = this
     const f = fillOf(n.total, n.mid), h = n.hue
-    ctx.save()
-    ctx.globalCompositeOperation = 'lighter'
-    let g = ctx.createRadialGradient(x, y, r * 0.7, x, y, r * 2.1)
-    g.addColorStop(0, `hsla(${h},90%,62%,${0.22 * alpha})`); g.addColorStop(1, `hsla(${h},90%,50%,0)`)
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r * 2.1, 0, TAU); ctx.fill()
-    g = ctx.createRadialGradient(x - r * 0.25, y - r * 0.3, r * 0.05, x, y, r)
-    g.addColorStop(0, `hsla(${h - 10},85%,78%,${0.42 * alpha})`)
-    g.addColorStop(0.6, `hsla(${h},80%,46%,${0.24 * alpha})`)
-    g.addColorStop(1, `hsla(${h + 12},85%,40%,${0.34 * alpha})`)
-    this.membranePath(n, x, y, r); ctx.fillStyle = g; ctx.fill()
-    ctx.save(); this.membranePath(n, x, y, r * 0.97); ctx.clip()
-    const arms = 3, turns = 0.5 + f * 3.2
-    ctx.lineWidth = 0.7; ctx.strokeStyle = `hsla(${h - 20},90%,82%,${(0.1 + f * 0.22) * alpha})`
-    for (let k = 0; k < arms; k++) {
-      ctx.beginPath()
-      for (let i = 0; i <= 70; i++) {
-        const s = i / 70, rr = r * 0.92 * Math.pow(s, 0.8)
-        const a = (k / arms) * TAU + s * turns * TAU + this.t * 0.12 * n.spin + n.phase
-        if (i) ctx.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr)
-        else ctx.moveTo(x, y)
+    const rot = this.t * 0.12 * n.spin + n.phase
+    if (lobes) {
+      // dividing: one glow, a body and spiral in each lobe; the outline below is the pinched membrane
+      const { ux, uy, off } = lobes
+      const share = 1 - 0.35 * (1 - Math.min(1, off / r)) // overlapping lobes add up; dim them while they overlap
+      paint.glow(x, y, r + off * 0.6, h, alpha)
+      for (const sgn of [1, -1]) {
+        const lx = x + ux * off * sgn, ly = y + uy * off * sgn
+        paint.body(lx, ly, r, h, alpha * share)
+        paint.spiral(lx, ly, r, f, rot, h, alpha * share)
       }
-      ctx.stroke()
+    } else {
+      paint.glow(x, y, r, h, alpha)
+      paint.body(x, y, r, h, alpha)
+      paint.spiral(x, y, r, f, rot, h, alpha)
     }
     const scale = Math.max(0.6, Math.min(1.6, this.cam.z))
+    const other = hsl(h - 25, 100, 88), gold = hsl(42, 100, 70)
     for (const b of n.bubbles) {
       const bx = x + Math.cos(b.a) * b.d * r * 0.85, by = y + Math.sin(b.a) * b.d * r * 0.85
       const s = (1.2 + Math.sqrt(b.amount) * 0.32) * b.in * scale
-      const c = b.mine ? `hsla(42,100%,70%,${0.95 * alpha * b.in})` : `hsla(${h - 25},100%,88%,${0.8 * alpha * b.in})`
-      const bg = ctx.createRadialGradient(bx, by, 0, bx, by, s * 2.2)
-      bg.addColorStop(0, c); bg.addColorStop(1, 'rgba(0,0,0,0)')
-      ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(bx, by, s * 2.2, 0, TAU); ctx.fill()
+      if (s < 0.2) continue
+      paint.speck(bx, by, s * 2.2, b.mine ? gold : other, (b.mine ? 0.95 : 0.8) * alpha * b.in)
     }
-    ctx.restore()
-    this.membranePath(n, x, y, r); ctx.lineWidth = selected ? 1.8 : 1.2
-    ctx.strokeStyle = `hsla(${h - 15},100%,${selected ? 92 : 80}%,${(selected ? 0.95 : 0.65) * alpha})`; ctx.stroke()
-    ctx.restore()
+    paint.outline(
+      this.membranePts(n, x, y, r),
+      hsl(h - 15, 100, selected ? 92 : 80),
+      (selected ? 0.95 : 0.65) * alpha,
+      selected ? 1.8 : 1.2,
+    )
+  }
+
+  /** Dev: draw one frame now and wait for the GPU (for timing). */
+  benchFrame() {
+    this.t += 1 / 60
+    this.step(1 / 60)
+    this.render()
+    this.paint.finish()
   }
 
   private render() {
+    if (!this.paint.isReady) return
     this.background()
     const z = this.cam.z
     for (const n of this.nodes.values()) {
@@ -511,7 +521,7 @@ export class Field {
           return m + (Math.log(Math.exp(k * (l1 - m)) + Math.exp(k * (l2 - m))) / k) * 0.6
         }
         this.shapeR0 = rc
-        this.drawNode(n, x, y, rc, n.alpha, false)
+        this.drawNode(n, x, y, rc, n.alpha, false, { ux, uy, off })
         this.shapeFn = null
       } else {
         const off = rc * (1 + ((p - 0.8) / 0.2) * 0.14)
@@ -519,6 +529,7 @@ export class Field {
         this.drawNode(n, x - ux * off, y - uy * off, rc, n.alpha, false)
       }
     }
+    this.paint.end()
   }
 }
 

@@ -22,7 +22,7 @@ const SIDE_W = 360
 const SHEET_H: Record<Sheet, number> = { peek: 0.22, half: 0.52, full: 0.92 }
 
 export default function App() {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const canvasRef = useRef<HTMLDivElement>(null)
   const fieldRef = useRef<Field | null>(null)
   const nodesRef = useRef<ChainNode[]>([])
   const [nodes, setNodes] = useState<ChainNode[]>([])
@@ -99,6 +99,7 @@ export default function App() {
 
     const boot = async () => {
       await assertLocalChain()
+      await field.ready
       // History: rebuild the tree as it was born, instantly, so bubbles land in the right nodes.
       const head = await publicClient.getBlockNumber()
       const history = await readEvents(0n, head)
@@ -144,7 +145,7 @@ export default function App() {
 
     return () => {
       cancelled = true
-      field.stop()
+      field.destroy()
       detach()
       window.removeEventListener('resize', onResize)
     }
@@ -243,7 +244,7 @@ export default function App() {
   const held = [...claims.values()].reduce((a, c) => a + c, 0n)
   return (
     <div className={`stage mode-${mode}`}>
-      <canvas ref={canvasRef} className="field" />
+      <div ref={canvasRef} className="field" />
 
       <div className={`top ${overlay ? '' : 'hidden'}`}>
         <span className="pill glass membrane">
