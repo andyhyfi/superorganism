@@ -10,6 +10,8 @@ import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 /// @notice A network of nodes that grows from one root. Users deposit a token into a live node.
 /// Each deposit rolls for a split; the chance rises with the node's fill and is never certain.
 /// A split halves the node into two identical children, and every user's claim halves into each.
+/// Halves round down to a multiple of `splitUnit` (10 units = 0.00001 USDC, five decimals). The
+/// node's split remainder goes to the treasury with the fees.
 ///
 /// Accounting is lazy, so a split never loops over depositors. A user's position is recorded
 /// only at nodes the user touched. A claim on any other node is read from the nearest ancestor
@@ -58,12 +60,12 @@ contract Evolution is ReentrancyGuard {
     IERC20 public immutable token;
     address public immutable treasury;
     uint256 public immutable minDeposit;
+    uint256 public immutable splitUnit; // halves round down to a multiple of this; 10 = five decimals for USDC
 
     // ---------------------------------------------------------------- state
 
     uint256 public nodeCount;
-    uint256 public feesAccrued; // owed to the treasury, sent by sweepFees()
-    uint256 public strandedDust; // odd units left when a node total halves; owned by nobody
+    uint256 public feesAccrued; // owed to the treasury (fees and split remainders), sent by sweepFees()
     uint256 private _nonce;
 
     mapping(uint256 nodeId => Node) internal _nodes;
@@ -87,18 +89,21 @@ contract Evolution is ReentrancyGuard {
     error InsufficientClaim(uint256 requested, uint256 available);
     error BatchTooLarge(uint256 length, uint256 max);
     error NothingToWithdraw();
+    error InvalidSplitUnit();
 
     // Lint notes, reviewed: the split roll's weak randomness is the documented v0 placeholder;
-    // the halving in _split floors on purpose and records the odd unit as strandedDust.
+    // the halving in _split rounds down on purpose and sends the remainder to the treasury.
 
     // ---------------------------------------------------------- constructor
 
-    constructor(IERC20 token_, address treasury_, uint256 minDeposit_, Traits memory rootTraits) {
+    constructor(IERC20 token_, address treasury_, uint256 minDeposit_, uint256 splitUnit_, Traits memory rootTraits) {
         if (address(token_) == address(0) || treasury_ == address(0)) revert ZeroAddress();
+        if (splitUnit_ == 0) revert InvalidSplitUnit();
         _validateTraits(rootTraits);
         token = token_;
         treasury = treasury_;
         minDeposit = minDeposit_ == 0 ? 1 : minDeposit_;
+        splitUnit = splitUnit_;
 
         _nodes[ROOT] = Node({parent: 0, firstChild: 0, depth: 0, split: false, total: 0, traits: rootTraits});
         nodeCount = 1;
@@ -198,17 +203,31 @@ contract Evolution is ReentrancyGuard {
     }
 
     /// @dev Reads the user's claim on `nodeId` from the nearest node on its path to the root
-    /// where the user holds a position, halved once per generation of distance.
-    /// A position includes everything inherited above it, so one ancestor is enough.
+    /// where the user holds a position, halved once per generation of distance with the same
+    /// rounding as node totals. A position includes everything inherited above it, so one
+    /// ancestor is enough.
     function _claim(uint256 nodeId, address user) internal view returns (uint256) {
         uint256 n = nodeId;
         for (uint256 d = 0; d <= MAX_WALK; ++d) {
             Position storage pos = _positions[n][user];
-            if (pos.set) return uint256(pos.own) >> d;
+            if (pos.set) {
+                uint256 c = pos.own;
+                for (uint256 i = 0; i < d && c != 0; ++i) {
+                    c = _half(c);
+                }
+                return c;
+            }
             if (n == ROOT) return 0;
             n = _nodes[n].parent;
         }
         return 0;
+    }
+
+    /// @dev Half of `x`, rounded down to a multiple of `splitUnit`. The halves of a node's
+    /// claims sum to at most the half of its total, so rounding never creates value.
+    function _half(uint256 x) internal view returns (uint256) {
+        uint256 h = x / 2;
+        return h - (h % splitUnit);
     }
 
     /// @dev Records the user's inherited claim at `nodeId` so later reads stop here.
@@ -241,8 +260,8 @@ contract Evolution is ReentrancyGuard {
         uint256 c0 = nodeCount;
         nodeCount = c0 + 2;
 
-        uint128 half = node.total / 2;
-        strandedDust += node.total - 2 * half;
+        uint128 half = _half(node.total).toUint128();
+        feesAccrued += uint256(node.total) - 2 * uint256(half);
 
         uint32 depth = node.depth + 1;
         uint64 parent = nodeId.toUint64();
