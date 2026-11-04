@@ -77,3 +77,13 @@ Halves round down to a multiple of `splitUnit`, set at deployment. For USDC (6 d
 - No owner, admin key, or upgrade path. Rules change only by deploying a new contract.
 - No mutations in v0. Node traits (fee, fill measure, roll-chance cap and midpoint) are stored per node from day one, and children copy them.
 - The split roll uses block data as a placeholder. A depositor can predict it and cancel unwanted results. It must be replaced before real funds.
+
+## Local test chain
+
+From the repo root:
+
+```
+./local.sh
+```
+
+Starts a private chain on this Mac (chain ID 31337, `http://127.0.0.1:8545`, 1-second blocks), deploys mock USDC and Evolution with the default rules, gives ten test accounts 100,000 mock USDC each, and seeds the root node with 125 USDC from three accounts. Addresses go to `contracts/deployments/local.json`. Ctrl+C stops it; every restart begins from an empty chain. The test accounts come from anvil's public test mnemonic and only ever hold mock tokens.
