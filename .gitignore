@@ -1,3 +1,17 @@
 # Local-only working documents. Never commit.
 /private/
 .DS_Store
+
+# Secrets
+.env
+.env.*
+*.key
+
+# Foundry build output
+contracts/out/
+contracts/cache/
+contracts/broadcast/*/31337/
+
+# Node
+node_modules/
+dist/
