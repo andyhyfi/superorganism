@@ -22,6 +22,12 @@ contract DeployLocal is Script {
     uint256 internal constant ACCOUNTS = 10;
     uint256 internal constant FUND = 100_000e6;
 
+    // Demo preset (default): same curve shape and 10% cap, but a 60 USDC midpoint and 1-in-2
+    // split odds, so splits happen every few minutes under gentle test activity. PRESET=real uses
+    // the production rules above. Local chain only; never the deployed rules.
+    uint128 internal constant DEMO_MID_FILL = 60e6;
+    uint256 internal constant DEMO_SPLIT_ODDS = 2;
+
     // Anvil's default test mnemonic. Public, local only, never holds value.
     string internal constant MNEMONIC = "test test test test test test test test test test test junk";
 
@@ -30,6 +36,7 @@ contract DeployLocal is Script {
 
         uint256 deployerKey = vm.deriveKey(MNEMONIC, 0);
         address deployer = vm.addr(deployerKey);
+        bool demo = keccak256(bytes(vm.envOr("PRESET", string("demo")))) != keccak256("real");
 
         vm.startBroadcast(deployerKey);
         MockUSDC usdc = new MockUSDC();
@@ -39,8 +46,8 @@ contract DeployLocal is Script {
             MIN_DEPOSIT,
             MIN_WITHDRAW,
             SPLIT_UNIT,
-            SPLIT_ODDS,
-            Evolution.Traits(FEE_PPM, 0, ROLL_CAP_PPM, ROLL_MID_FILL)
+            demo ? DEMO_SPLIT_ODDS : SPLIT_ODDS,
+            Evolution.Traits(FEE_PPM, 0, ROLL_CAP_PPM, demo ? DEMO_MID_FILL : ROLL_MID_FILL)
         );
         for (uint256 i = 0; i < ACCOUNTS; ++i) {
             usdc.mint(vm.addr(vm.deriveKey(MNEMONIC, uint32(i))), FUND);
@@ -59,6 +66,7 @@ contract DeployLocal is Script {
 
         string memory obj = "local";
         vm.serializeUint(obj, "chainId", block.chainid);
+        vm.serializeString(obj, "preset", demo ? "demo" : "real");
         vm.serializeAddress(obj, "usdc", address(usdc));
         vm.serializeAddress(obj, "treasury", deployer);
         string memory json = vm.serializeAddress(obj, "evolution", address(evo));
