@@ -11,6 +11,7 @@
     "activity": "node scripts/activity.mjs"
   },
   "dependencies": {
+    "lucide-react": "^1.68.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "viem": "2.57.16"

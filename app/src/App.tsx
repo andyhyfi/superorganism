@@ -8,12 +8,13 @@ import { Field } from './field'
 import { attachGestures } from './gestures'
 import { Deep, type Tab, type Sheet, type SelectedInfo } from './Deep'
 import { fmtUsd } from './format'
+import { Plus, Minus, Maximize2, LayoutList, Waves } from 'lucide-react'
 import './app.css'
 
 type Mode = 'aquarium' | 'deep'
 const NARROW = '(max-width: 720px)'
-const SIDE_W = 340
-const SHEET_H: Record<Sheet, number> = { peek: 0.18, half: 0.5, full: 0.86 }
+const SIDE_W = 360
+const SHEET_H: Record<Sheet, number> = { peek: 0.22, half: 0.52, full: 0.92 }
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -168,7 +169,7 @@ export default function App() {
     if (!field) return
     if (mode === 'aquarium') field.setInset(0, 0)
     else if (narrow) field.setInset(0, Math.round(window.innerHeight * SHEET_H[sheet]))
-    else field.setInset(SIDE_W + 24, 0)
+    else field.setInset(SIDE_W + 16, 0)
     field.setAutoReturn(mode === 'aquarium' ? 15000 : null)
   }, [mode, narrow, sheet])
 
@@ -226,26 +227,36 @@ export default function App() {
   // ---------------------------------------------------------------- view
   const live = nodes.filter(n => !n.split).length
   const overlay = mode === 'aquarium' && chrome && !idle
-  const ctrlCls = ['controls', mode === 'deep' || overlay ? '' : 'hidden', mode === 'deep' && !narrow ? 'shift' : '', mode === 'deep' && narrow ? `lift-${sheet}` : ''].join(' ')
+  const ctrlCls = [
+    'controls glass',
+    mode === 'deep' || overlay ? '' : 'hidden',
+    mode === 'deep' && !narrow ? 'side-open' : '',
+    mode === 'deep' && narrow ? `sheet-${sheet}` : '',
+  ].join(' ')
+  const held = [...claims.values()].reduce((a, c) => a + c, 0n)
   return (
     <div className={`stage mode-${mode}`}>
       <canvas ref={canvasRef} className="field" />
 
-      <div className={`hud ${overlay ? '' : 'hidden'}`}>
-        <span>{live} nodes</span>
-        <span>{nodes.length ? (nodes.length - 1) / 2 : 0} splits</span>
-        <span className="dim">local chain{PRESET === 'demo' ? ' · demo odds' : ''}</span>
-      </div>
-      <div className={`you ${overlay ? '' : 'hidden'}`}>
-        <span className="dot" /> {fmtUsd(wallet)} USDC
+      <div className={`top ${overlay ? '' : 'hidden'}`}>
+        <span className="pill glass">
+          {live} {live === 1 ? 'cell' : 'cells'}
+          <span className="sub">{PRESET === 'demo' ? 'Local · demo odds' : 'Local'}</span>
+        </span>
+        <span className="pill glass">
+          {held > 0n && <span className="dot" />}
+          <span className="num">{fmtUsd(held > 0n ? held : wallet)}</span>
+          <span className="sub">{held > 0n ? 'in network' : 'USDC'}</span>
+        </span>
       </div>
 
       <div className={ctrlCls}>
-        <button aria-label="Zoom in" onClick={() => fieldRef.current?.zoomBy(1.25)}>+</button>
-        <button aria-label="Zoom out" onClick={() => fieldRef.current?.zoomBy(0.8)}>−</button>
-        <button aria-label="Fit network" onClick={() => fieldRef.current?.fitAll()}>⤢</button>
-        <button className="mode" onClick={() => setMode(m => (m === 'deep' ? 'aquarium' : 'deep'))}>
-          {mode === 'deep' ? 'Aquarium' : 'Deep'}
+        <button aria-label="Zoom out" onClick={() => fieldRef.current?.zoomBy(0.8)}><Minus size={20} strokeWidth={2.25} /></button>
+        <button aria-label="Fit network" onClick={() => fieldRef.current?.fitAll()}><Maximize2 size={18} strokeWidth={2.25} /></button>
+        <button aria-label="Zoom in" onClick={() => fieldRef.current?.zoomBy(1.25)}><Plus size={20} strokeWidth={2.25} /></button>
+        <span className="divider" />
+        <button className="primary" onClick={() => setMode(m => (m === 'deep' ? 'aquarium' : 'deep'))}>
+          {mode === 'deep' ? <><Waves size={18} strokeWidth={2.25} />Watch</> : <><LayoutList size={18} strokeWidth={2.25} />Details</>}
         </button>
       </div>
 
@@ -253,7 +264,7 @@ export default function App() {
         <Deep
           tab={tab} setTab={setTab} sheet={sheet} setSheet={setSheet} narrow={narrow}
           nodes={nodes} feed={feed} you={you.address} selected={sel} claims={claims}
-          fees={fees} odds={odds} busy={busy} amount={amount} setAmount={setAmount}
+          fees={fees} odds={odds} wallet={wallet} busy={busy} amount={amount} setAmount={setAmount}
           onSelect={id => { select(id); fieldRef.current?.focus(id) }}
           onFocus={id => fieldRef.current?.focus(id)}
           onDeposit={() => sel && act('deposit', () => deposit(sel.id, units))}
@@ -264,9 +275,6 @@ export default function App() {
       )}
 
       {error && <div className="toast">{error}</div>}
-      <div className={`hint ${overlay ? '' : 'hidden'}`}>
-        {narrow ? 'Tap a node · pinch to zoom' : 'Click a node · scroll to zoom · Tab for Deep · H hides'}
-      </div>
     </div>
   )
 }
