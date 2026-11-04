@@ -256,6 +256,26 @@ contract Evolution is ReentrancyGuard {
         emit Withdrawn(nodeId, user, amount, fee);
     }
 
+    /// @dev Divides a node into two identical children.
+    ///
+    /// Remainder rules, in order:
+    /// 1. Each child's total is `_half(parent.total)`: half the parent, rounded down to a
+    ///    multiple of `splitUnit` (10 base units = 0.00001 USDC).
+    /// 2. The node-level remainder, `parent.total - 2 * childTotal`, goes to the treasury: it is
+    ///    added to `feesAccrued` and leaves with the next `sweepFees()`. It is at most
+    ///    `2 * splitUnit - 1` base units per split.
+    /// 3. Each user's claim on a child is `_half` of their parent claim, rounded the same way, read
+    ///    lazily by `_claim`. Because `floor((a + b) / k) >= floor(a / k) + floor(b / k)`, the halves
+    ///    of a node's claims never sum to more than the half of its total. A child's total is
+    ///    therefore always at least the sum of its claims, and rounding never creates value.
+    /// 4. The gap between a child's total and the sum of its claims is unowned fill: per-user
+    ///    rounding that belongs to nobody. It stays in the node, counts toward the node's fill,
+    ///    halves with the node at every later split, and its share of each split remainder goes
+    ///    to the treasury under rule 2. Paying it out at split time would require a loop over
+    ///    depositors, which the contract never does.
+    ///
+    /// The parent keeps its recorded total for history but takes no further deposits or
+    /// withdrawals; its claims now live in the children.
     function _split(uint256 nodeId, Node storage node) internal {
         uint256 c0 = nodeCount;
         nodeCount = c0 + 2;

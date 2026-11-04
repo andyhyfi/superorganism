@@ -21,5 +21,11 @@ runs = 256
 depth = 64
 fail_on_revert = false
 
+# Long sequences that grow deep trees: FOUNDRY_PROFILE=deep forge test
+[profile.deep.invariant]
+runs = 32
+depth = 500
+fail_on_revert = false
+
 [rpc_endpoints]
 ink_sepolia = "https://rpc-gel-sepolia.inkonchain.com"
