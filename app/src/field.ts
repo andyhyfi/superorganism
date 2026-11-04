@@ -7,6 +7,9 @@ const TAU = Math.PI * 2
 const rand = (a: number, b: number) => a + Math.random() * (b - a)
 const ease = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2)
 const SPLIT_SECONDS = 3.4
+const ZMIN = 0.15
+const ZMAX = 6
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 const MAX_BUBBLES = 60
 
 type Bubble = { a: number; d: number; amount: number; mine: boolean; w: number; in: number; out: boolean; user: string }
@@ -34,6 +37,14 @@ export class Field {
   private nodes = new Map<number, VNode>()
   private dust = Array.from({ length: 170 }, () => ({ x: Math.random(), y: Math.random(), z: rand(0.2, 1), tw: rand(0, TAU) }))
   private cam = { x: 0, y: 0, z: 1 }
+  // Camera: 'auto' frames the whole network; 'manual' holds where the user put it; 'follow'
+  // keeps one node centered. In Aquarium, manual eases back to auto after `autoReturnMs` idle.
+  private camMode: 'auto' | 'manual' | 'follow' = 'auto'
+  private follow: number | null = null
+  private lastInput = 0
+  private autoReturnMs: number | null = 15000
+  private inset = { right: 0, bottom: 0 }
+  private zoomTarget: number | null = null
   private raf = 0
   private last = 0
   private you: string
@@ -238,6 +249,7 @@ export class Field {
     this.nodes.delete(n.id)
     for (const k of kids) this.nodes.set(k.id, k)
     if (this.selected === n.id) this.selected = null
+    if (this.follow === n.id) this.follow = c0 // keep following the line: first child
   }
 
   private step(dt: number) {
@@ -277,6 +289,26 @@ export class Field {
 
   private updateCamera(dt: number) {
     if (!this.nodes.size) return
+    const vw = this.W - this.inset.right, vh = this.H - this.inset.bottom
+    if (this.camMode === 'manual' && this.autoReturnMs != null && performance.now() - this.lastInput > this.autoReturnMs) {
+      this.camMode = 'auto'
+    }
+    if (this.camMode === 'follow') {
+      const n = this.follow != null ? this.nodes.get(this.follow) : undefined
+      if (!n) {
+        // followed node split or left: frame its children if they exist, else everything
+        this.camMode = 'auto'
+        this.follow = null
+      } else {
+        const k = Math.min(1, dt * 2.2)
+        const z = this.zoomTarget ?? Math.min(4, Math.min(vw, vh) * 0.32 / Math.max(n.r, 1))
+        this.cam.x += (n.x - this.cam.x) * k
+        this.cam.y += (n.y - this.cam.y) * k
+        this.cam.z += (z - this.cam.z) * k
+        return
+      }
+    }
+    if (this.camMode !== 'auto') return
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
     for (const n of this.nodes.values()) {
       const pad = n.r * 1.6
@@ -284,19 +316,94 @@ export class Field {
       x1 = Math.max(x1, n.x + pad); y1 = Math.max(y1, n.y + pad)
     }
     const margin = 0.82
-    const z = Math.min(1.6, (this.W * margin) / (x1 - x0), (this.H * margin) / (y1 - y0))
+    const z = Math.min(1.6, (vw * margin) / (x1 - x0), (vh * margin) / (y1 - y0))
     const k = Math.min(1, dt * 0.6) // slow, aquarium-paced camera
     this.cam.x += ((x0 + x1) / 2 - this.cam.x) * k
     this.cam.y += ((y0 + y1) / 2 - this.cam.y) * k
     this.cam.z += (z - this.cam.z) * k
   }
 
+  // ------------------------------------------------------------- controls
+
+  /** Drag: move the view by screen pixels. */
+  pan(dx: number, dy: number) {
+    this.takeManual()
+    this.cam.x -= dx / this.cam.z
+    this.cam.y -= dy / this.cam.z
+  }
+
+  /** Zoom by `factor` around a screen point, keeping that point fixed. */
+  zoomAt(px: number, py: number, factor: number) {
+    if (this.camMode === 'follow') {
+      this.zoomTarget = clamp((this.zoomTarget ?? this.cam.z) * factor, ZMIN, ZMAX)
+      this.lastInput = performance.now()
+      return
+    }
+    this.takeManual()
+    const [wx, wy] = this.toWorld(px, py)
+    this.cam.z = clamp(this.cam.z * factor, ZMIN, ZMAX)
+    const [nx, ny] = this.toWorld(px, py)
+    this.cam.x += wx - nx
+    this.cam.y += wy - ny
+  }
+
+  /** Zoom by `factor` around the center of the visible area. */
+  zoomBy(factor: number) {
+    const cx = (this.W - this.inset.right) / 2, cy = (this.H - this.inset.bottom) / 2
+    this.zoomAt(cx, cy, factor)
+  }
+
+  /** Center and follow a node until the user moves the camera. */
+  focus(id: number) {
+    if (!this.nodes.has(id)) return
+    this.camMode = 'follow'
+    this.follow = id
+    this.zoomTarget = null
+    this.lastInput = performance.now()
+  }
+
+  /** Frame the whole network again. */
+  fitAll() {
+    this.camMode = 'auto'
+    this.follow = null
+    this.zoomTarget = null
+  }
+
+  /** Screen area covered by panels; the camera centers in what is left. */
+  setInset(right: number, bottom: number) {
+    this.inset = { right, bottom }
+  }
+
+  /** How long manual camera control holds before easing back to the whole network. null holds forever. */
+  setAutoReturn(ms: number | null) {
+    this.autoReturnMs = ms
+  }
+
+  cameraMode() {
+    return this.camMode
+  }
+
+  zoom() {
+    return this.cam.z
+  }
+
+  private takeManual() {
+    if (this.camMode !== 'manual') {
+      this.camMode = 'manual'
+      this.follow = null
+      this.zoomTarget = null
+    }
+    this.lastInput = performance.now()
+  }
+
   private toScreen(x: number, y: number): [number, number] {
-    return [(x - this.cam.x) * this.cam.z + this.W / 2, (y - this.cam.y) * this.cam.z + this.H / 2]
+    const cx = (this.W - this.inset.right) / 2, cy = (this.H - this.inset.bottom) / 2
+    return [(x - this.cam.x) * this.cam.z + cx, (y - this.cam.y) * this.cam.z + cy]
   }
 
   private toWorld(px: number, py: number): [number, number] {
-    return [(px - this.W / 2) / this.cam.z + this.cam.x, (py - this.H / 2) / this.cam.z + this.cam.y]
+    const cx = (this.W - this.inset.right) / 2, cy = (this.H - this.inset.bottom) / 2
+    return [(px - cx) / this.cam.z + this.cam.x, (py - cy) / this.cam.z + this.cam.y]
   }
 
   // ---------------------------------------------------------------- render

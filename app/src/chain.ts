@@ -38,9 +38,9 @@ export type ChainNode = {
 }
 
 export type NetEvent =
-  | { kind: 'deposit'; node: number; user: Address; amount: bigint; key: string }
-  | { kind: 'withdraw'; node: number; user: Address; amount: bigint; key: string }
-  | { kind: 'split'; parent: number; c0: number; c1: number; key: string }
+  | { kind: 'deposit'; node: number; user: Address; amount: bigint; key: string; block: bigint }
+  | { kind: 'withdraw'; node: number; user: Address; amount: bigint; key: string; block: bigint }
+  | { kind: 'split'; parent: number; c0: number; c1: number; key: string; block: bigint }
 
 export async function assertLocalChain() {
   const id = await publicClient.getChainId()
@@ -74,15 +74,24 @@ export async function readEvents(from: bigint, to: bigint): Promise<NetEvent[]> 
   const out: NetEvent[] = []
   for (const l of parsed) {
     const key = `${l.transactionHash}:${l.logIndex}`
+    const block = l.blockNumber ?? 0n
     if (l.eventName === 'Deposited') {
-      out.push({ kind: 'deposit', node: Number(l.args.nodeId), user: l.args.user, amount: l.args.amount, key })
+      out.push({ kind: 'deposit', node: Number(l.args.nodeId), user: l.args.user, amount: l.args.amount, key, block })
     } else if (l.eventName === 'Withdrawn') {
-      out.push({ kind: 'withdraw', node: Number(l.args.nodeId), user: l.args.user, amount: l.args.amount, key })
+      out.push({ kind: 'withdraw', node: Number(l.args.nodeId), user: l.args.user, amount: l.args.amount, key, block })
     } else if (l.eventName === 'Split') {
-      out.push({ kind: 'split', parent: Number(l.args.parentId), c0: Number(l.args.child0), c1: Number(l.args.child1), key })
+      out.push({ kind: 'split', parent: Number(l.args.parentId), c0: Number(l.args.child0), c1: Number(l.args.child1), key, block })
     }
   }
   return out
+}
+
+export async function feesOwed(): Promise<bigint> {
+  return publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'feesAccrued' })
+}
+
+export async function splitOdds(): Promise<bigint> {
+  return publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'splitOdds' })
 }
 
 export async function claimOf(node: number): Promise<bigint> {
@@ -125,6 +134,19 @@ export async function deposit(node: number, amount: bigint) {
 
 export async function withdrawWhole(node: number) {
   await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'withdrawAll', args: [[BigInt(node)]] }))
+}
+
+/** Your claims on the given nodes, in order. */
+export async function claimsOf(ids: number[]): Promise<bigint[]> {
+  return Promise.all(ids.map(id => claimOf(id)))
+}
+
+/** Withdraws every listed claim, in batches of 50 (the contract's cap per call). */
+export async function withdrawEverything(ids: number[]) {
+  for (let i = 0; i < ids.length; i += 50) {
+    const batch = ids.slice(i, i + 50).map(BigInt)
+    await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'withdrawAll', args: [batch] }))
+  }
 }
 
 export const USDC_UNIT = 1_000_000n
