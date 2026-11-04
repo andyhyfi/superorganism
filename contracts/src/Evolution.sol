@@ -137,7 +137,8 @@ contract Evolution is ReentrancyGuard {
     /// @notice Withdraw `amount` of the caller's claim from a live node, minus the node's fee.
     function withdraw(uint256 nodeId, uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
-        uint256 payout = _take(nodeId, msg.sender, amount);
+        (uint256 payout, uint256 fee) = _take(nodeId, msg.sender, amount);
+        feesAccrued += fee;
         token.safeTransfer(msg.sender, payout);
     }
 
@@ -148,14 +149,18 @@ contract Evolution is ReentrancyGuard {
         if (len > MAX_BATCH) revert BatchTooLarge(len, MAX_BATCH);
 
         uint256 payout = 0;
+        uint256 fees = 0;
         for (uint256 i = 0; i < len; ++i) {
             uint256 id = nodeIds[i];
             if (id >= nodeCount || _nodes[id].split) continue;
             uint256 claim = _claim(id, msg.sender);
             if (claim == 0) continue;
-            payout += _take(id, msg.sender, claim);
+            (uint256 p, uint256 f) = _take(id, msg.sender, claim);
+            payout += p;
+            fees += f;
         }
         if (payout == 0) revert NothingToWithdraw();
+        feesAccrued += fees;
         token.safeTransfer(msg.sender, payout);
     }
 
@@ -239,8 +244,9 @@ contract Evolution is ReentrancyGuard {
         }
     }
 
-    /// @dev Removes `amount` from the user's claim and the node's fill. Returns the payout.
-    function _take(uint256 nodeId, address user, uint256 amount) internal returns (uint256 payout) {
+    /// @dev Removes `amount` from the user's claim and the node's fill. Returns the payout and
+    /// the fee; the caller adds the fee to `feesAccrued` once, outside any loop.
+    function _take(uint256 nodeId, address user, uint256 amount) internal returns (uint256 payout, uint256 fee) {
         Node storage node = _live(nodeId);
         Position storage pos = _materialize(nodeId, user);
         if (amount > pos.own) revert InsufficientClaim(amount, pos.own);
@@ -249,8 +255,7 @@ contract Evolution is ReentrancyGuard {
         pos.own -= a;
         node.total -= a; // node.total >= every claim in it, so this cannot underflow
 
-        uint256 fee = (amount * node.traits.feePpm) / PPM;
-        feesAccrued += fee;
+        fee = (amount * node.traits.feePpm) / PPM;
         payout = amount - fee;
 
         emit Withdrawn(nodeId, user, amount, fee);
