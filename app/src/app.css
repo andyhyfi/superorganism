@@ -146,3 +146,39 @@ button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent
   font-family: var(--font-display); font-weight: 400; font-synthesis: none;
 }
 .hero .big { letter-spacing: -0.02em; }
+
+/* ------------------------------------------------------------ first-time guide */
+.guide {
+  position: absolute; z-index: 40; left: 50%; transform: translateX(-50%);
+  top: calc(16px + env(safe-area-inset-top)); width: min(360px, calc(100vw - 2 * var(--gap)));
+  padding: 18px 18px 12px; border-radius: 22px; animation: guide-in 0.7s var(--ease) both;
+  transition: left 0.5s var(--ease);
+}
+.guide.membrane { position: absolute; }
+.guide.side-open { left: calc((100% - var(--side) - var(--gap)) / 2); }
+@keyframes guide-in { from { opacity: 0; transform: translateX(-50%) translateY(-8px); } to { opacity: 1; transform: translateX(-50%); } }
+.guide-pages { display: grid; }
+.guide-page { grid-area: 1 / 1; opacity: 0; transform: translateY(4px); transition: opacity 0.5s ease, transform 0.6s var(--ease); pointer-events: none; }
+.guide-page.on { opacity: 1; transform: none; pointer-events: auto; }
+.guide-title { font-family: var(--font-display); font-size: 19px; line-height: 1.25; color: var(--text); margin-bottom: 6px; font-synthesis: none; }
+.guide-body { font-size: 15px; line-height: 1.4; color: var(--text-2); }
+.guide-foot { display: flex; align-items: center; gap: 4px; margin-top: 14px; }
+.guide-dots { display: flex; gap: 6px; flex: 1; }
+.guide-dots span { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.18); transition: background 0.5s ease, box-shadow 0.5s ease; }
+.guide-dots span.past { background: rgba(255,255,255,0.4); }
+.guide-dots span.on { background: var(--gold); box-shadow: 0 0 8px rgba(255, 204, 92, 0.8); }
+.guide-skip, .guide-next { border: 0; height: 36px; padding: 0 14px; border-radius: 999px; font-size: 15px; cursor: pointer; }
+.guide-skip { background: none; color: var(--text-2); }
+.guide-skip:hover { color: var(--text); }
+.guide-next { font-family: var(--font-display); color: var(--text); font-synthesis: none; }
+@media (pointer: coarse) { .guide-skip, .guide-next { height: 44px; } }
+/* phones: sit below the money bar */
+@media (max-width: 720px) and (orientation: portrait) { .guide { top: calc(64px + env(safe-area-inset-top)); } }
+/* while the Feed card shows, the Feed button breathes */
+.guide-feed .deep .btn.cell-btn:not(:disabled) { animation: guide-glow 2.4s ease-in-out infinite; }
+@keyframes guide-glow { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 204, 92, 0); } 50% { box-shadow: 0 0 0 3px rgba(255, 204, 92, 0.35), 0 0 22px rgba(255, 204, 92, 0.35); } }
+/* while the Fee card shows, the fee rows light up */
+.stage .deep .group .cell.money-rule { transition: background-color 0.8s ease; }
+.stage.guide-fee .deep .group .cell.money-rule { background-color: rgba(255, 204, 92, 0.1); }
+.stage.guide-fee .deep .group .cell.money-rule .k { color: var(--gold); transition: color 0.8s ease; }
+@media (prefers-reduced-motion: reduce) { .guide, .guide-page { animation: none; transition: none; } .guide-feed .deep .btn.cell-btn { animation: none; } }

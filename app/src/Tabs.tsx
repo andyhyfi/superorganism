@@ -144,10 +144,10 @@ export function NodeTab(p: DeepProps) {
       <div className="section-title">&nbsp;</div>
       <div className="group membrane">
         <Row k={t('cell.deposits')} v={`${fmtUsd(s.total)} USDC`} />
-        <Row k={t('cell.fee')} v={`${((node?.traits.feePpm ?? 0) / 1e4).toFixed(4)}%`} />
+        <Row rule k={t('cell.fee')} v={`${((node?.traits.feePpm ?? 0) / 1e4).toFixed(4)}%`} />
         <Row k={t('cell.minimum')} v="1" />
         {p.limits.maxDeposit > 0n && <Row k={t('cell.maximum')} v={fmtUsd(p.limits.maxDeposit)} />}
-        {p.limits.eventFee > 0n && <Row k={t('cell.eventFee')} v={fmtUsd(p.limits.eventFee)} hint={t('cell.eventFeeHint')} />}
+        {p.limits.eventFee > 0n && <Row rule k={t('cell.eventFee')} v={fmtUsd(p.limits.eventFee)} hint={t('cell.eventFeeHint')} />}
         <Gate id="cell.generation" c={c}><Row k={t('cell.generation')} v={String(node?.depth ?? 0)} /></Gate>
       </div>
 
@@ -327,18 +327,18 @@ function FeedList({ p, rows }: { p: DeepProps; rows: DeepProps['feed'] }) {
 
 /** A label and a value. With `hint`: hovering (mouse) shows it, and a tap (touch) shows it in
  *  place of the label for a few seconds, so the row never changes size. */
-function Row({ k, v, hint }: { k: string; v: string; hint?: string }) {
+function Row({ k, v, hint, rule }: { k: string; v: string; hint?: string; rule?: boolean }) {
   const [open, setOpen] = useState(false)
   if (!hint) {
     return (
-      <div className="cell">
+      <div className={rule ? 'cell row money-rule' : 'cell'}>
         <span className="k">{k}</span>
         <span className="v">{v}</span>
       </div>
     )
   }
   return (
-    <div className="cell has-hint" title={hint} aria-description={hint} tabIndex={0}
+    <div className={rule ? 'cell has-hint row money-rule' : 'cell has-hint'} title={hint} aria-description={hint} tabIndex={0}
       onClick={() => { setOpen(true); window.setTimeout(() => setOpen(false), 3500) }}>
       <span className="k">{open ? <span className="hint-text">{hint}</span> : <>{k}<Info size={13} strokeWidth={2.25} className="hint-mark" /></>}</span>
       <span className="v">{v}</span>
