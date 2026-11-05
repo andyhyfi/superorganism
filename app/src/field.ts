@@ -80,6 +80,7 @@ const LOANS = {
   burst: 10, // specks in a send or a return
   burstSeconds: 1.8, // how long a send or a return takes to cross
   bow: 0.18, // how far the thread curves out of a straight line
+  selectedGlow: 2.6, // how much brighter a selected cell's threads get (eases with the selection light)
 }
 
 export class Field {
@@ -731,15 +732,22 @@ export class Field {
       if (!a || !b || a.splitting || b.splitting) continue
       const amount = Number(l.amount) / 1e6
       const bow = (l.loanId % 2 ? 1 : -1) * LOANS.bow
-      const rim = hex(SPECIES[a.sp].rim), speck = hex(SPECIES[a.sp].speck)
+      const rim = hex(SPECIES[a.sp].rim), speck = hex(SPECIES[a.sp].speck), core = hex(SPECIES[a.sp].core)
+      // a selected cell's threads glow, easing in and out with the cell's own selection light
+      const lit = Math.max(a.lit, b.lit)
+      const boost = 1 + (LOANS.selectedGlow - 1) * lit
       const pts: number[] = []
       for (let i = 0; i <= 24; i++) pts.push(...this.threadAt(a, b, bow, i / 24))
-      paint.line(pts, rim, LOANS.filament * Math.min(1, 0.4 + amount / 60), 1.2)
+      const base = LOANS.filament * Math.min(1, 0.4 + amount / 60)
+      if (lit > 0.01) paint.line(pts, rim, Math.min(0.5, base * 0.9 * lit), 4 + 3 * lit) // soft bloom under the thread
+      paint.line(pts, rim, Math.min(0.9, base * boost), 1.2 + 0.6 * lit)
       for (let k = 0; k < LOANS.specks; k++) {
         const q = (this.t * LOANS.drift + k / LOANS.specks + l.loanId * 0.37) % 1
         const [x, y] = this.threadAt(a, b, bow, q)
         const fade = Math.sin(q * Math.PI)
-        paint.speck(x, y, (1.2 + Math.sqrt(amount) * 0.18) * scale, speck, 0.55 * fade)
+        const r = (1.2 + Math.sqrt(amount) * 0.18) * scale * (1 + 0.35 * lit)
+        paint.speck(x, y, r, speck, Math.min(1, 0.55 * fade * (1 + 0.6 * lit)))
+        if (lit > 0.01) paint.speck(x, y, r * 2.4, core, 0.22 * fade * lit)
       }
     }
     for (const f of this.flows) {
