@@ -138,6 +138,12 @@ export async function withdrawWhole(node: number) {
   await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'withdrawAll', args: [[BigInt(node)]] }))
 }
 
+/** Withdraws `amount` of your claim from one node (the whole claim if amount equals it). */
+export async function withdrawAmount(node: number, amount: bigint, claim: bigint) {
+  if (amount >= claim) return withdrawWhole(node)
+  await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'withdraw', args: [BigInt(node), amount] }))
+}
+
 /** Your claims on the given nodes, in order. */
 export async function claimsOf(ids: number[]): Promise<bigint[]> {
   return Promise.all(ids.map(id => claimOf(id)))

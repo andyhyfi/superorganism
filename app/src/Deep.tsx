@@ -35,7 +35,7 @@ export type DeepProps = {
   onSelect: (id: number) => void
   onFocus: (id: number) => void
   onDeposit: () => void
-  onWithdraw: () => void
+  onWithdraw: (amount: bigint) => void
   onWithdrawAll: () => void
   onClose: () => void
 }

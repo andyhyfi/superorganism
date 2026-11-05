@@ -1,9 +1,9 @@
 // The four Deep tabs. Words come from reveal.ts (t), and every optional section asks shown()
 // first, so what a player sees can be gated by holdings, deposits, or mutations.
 import { useState, type ReactNode } from 'react'
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Inbox } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Inbox, X } from 'lucide-react'
 import type { DeepProps } from './Deep'
-import { cleanAmount, fmtPct, fmtUsd, short, toUnits } from './format'
+import { cleanAmount, fmtPct, fmtUsd, fromUnits, short, toUnits } from './format'
 import { shown, t, type Ctx, type InfoId } from './reveal'
 
 const usdNum = (x: bigint) => Number(x) / 1e6
@@ -37,13 +37,18 @@ export function NodeTab(p: DeepProps) {
   const lineage: number[] = []
   for (let n = node; n && n.id !== 0; n = p.nodes[n.parent]) lineage.unshift(n.id)
   lineage.unshift(0)
+  const [side, setSide] = useState<'deposit' | 'withdraw'>('deposit')
+  const out = side === 'withdraw' && s.claim > 0n
+  const limit = out ? s.claim : p.wallet
   const units = toUnits(p.amount)
-  const amt = Number(units) / 1e6
-  const tooSmall = units > 0n && units < 1_000_000n
-  const tooBig = units > p.wallet
-  const amountOk = units >= 1_000_000n && !tooBig
-  const max = Math.floor(Number(p.wallet) / 1e6)
-  const set = (v: number) => p.setAmount(String(v))
+  const tooSmall = units > 0n && units < 1_000_000n && !(out && units === s.claim)
+  const tooBig = units > limit
+  const amountOk = units > 0n && !tooSmall && !tooBig
+  // +10 / +50 / +100 add to what is there; capped at what you can move
+  const add = (v: number) => {
+    const next = units + BigInt(v) * 1_000_000n
+    p.setAmount(fromUnits(next > limit ? limit : next))
+  }
 
   return (
     <>
@@ -58,22 +63,31 @@ export function NodeTab(p: DeepProps) {
         </Gate>
       </div>
 
+      {s.claim > 0n && (
+        <div className="segmented side" role="tablist">
+          {(['deposit', 'withdraw'] as const).map(k => (
+            <button key={k} role="tab" aria-selected={side === k} onClick={() => { setSide(k); p.setAmount('') }}>{t(k === 'deposit' ? 'act.deposit' : 'act.withdraw')}</button>
+          ))}
+        </div>
+      )}
       <div className="amount membrane">
         <input value={p.amount} onChange={e => p.setAmount(cleanAmount(e.target.value))} inputMode="decimal" aria-label={t('act.amount')} placeholder="0" />
         <span className="unit">USDC</span>
+        {units > 0n && <button className="clear" aria-label={t('act.clear')} onClick={() => p.setAmount('')}><X size={14} strokeWidth={2.5} /></button>}
       </div>
-      {(tooSmall || tooBig) && <p className="hint-err">{tooSmall ? t('act.belowMin') : t('act.overWallet')}</p>}
+      {(tooSmall || tooBig) && <p className="hint-err">{tooSmall ? t('act.belowMin') : out ? t('act.overClaim') : t('act.overWallet')}</p>}
       <div className="quick">
-        {[10, 50, 100].map(v => <button key={v} className="cell-quiet" aria-pressed={amt === v} onClick={() => set(v)}>{v}</button>)}
-        <button className="cell-quiet" aria-pressed={amt === max && max > 0} onClick={() => set(max)}>{t('act.max')}</button>
+        {[10, 50, 100].map(v => <button key={v} className="cell-quiet" disabled={units >= limit} onClick={() => add(v)}>+{v}</button>)}
+        <button className="cell-quiet" aria-pressed={units === limit && limit > 0n} onClick={() => p.setAmount(fromUnits(limit))}>{t('act.max')}</button>
       </div>
       <div className="buttons">
-        <button className="btn cell-btn" disabled={!!p.busy || !amountOk} onClick={e => { pulse(e); p.onDeposit() }}>
-          {p.busy === 'deposit' ? t('act.depositing') : t('act.deposit')}
-        </button>
-        {s.claim > 0n && (
-          <button className="btn cell-quiet" disabled={!!p.busy} onClick={e => { pulse(e); p.onWithdraw() }}>
-            {p.busy === 'withdraw' ? t('act.withdrawing') : `${t('act.withdraw')} ${fmtUsd(s.claim)}`}
+        {out ? (
+          <button className="btn cell-btn" disabled={!!p.busy || !amountOk} onClick={e => { pulse(e); p.onWithdraw(units) }}>
+            {p.busy === 'withdraw' ? t('act.withdrawing') : units > 0n ? `${t('act.withdraw')} ${fmtUsd(units)}` : t('act.withdraw')}
+          </button>
+        ) : (
+          <button className="btn cell-btn" disabled={!!p.busy || !amountOk} onClick={e => { pulse(e); p.onDeposit() }}>
+            {p.busy === 'deposit' ? t('act.depositing') : units > 0n ? `${t('act.deposit')} ${fmtUsd(units)}` : t('act.deposit')}
           </button>
         )}
       </div>

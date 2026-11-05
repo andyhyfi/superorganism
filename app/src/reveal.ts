@@ -70,6 +70,8 @@ export const INFO = {
   'act.max': { label: 'Max', rule: { always: true } },
   'act.belowMin': { label: 'Minimum is 1 USDC', rule: { always: true } },
   'act.overWallet': { label: 'More than your wallet holds', rule: { always: true } },
+  'act.overClaim': { label: 'More than your share here', rule: { always: true } },
+  'act.clear': { label: 'Clear', rule: { always: true } },
 
   // the network
   'net.held': { label: 'Held across the network', rule: { always: true } },

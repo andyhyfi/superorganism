@@ -69,7 +69,11 @@ export class Field {
   private H = 0
   private t = 0
   private nodes = new Map<number, VNode>()
-  private dust = Array.from({ length: 170 }, () => ({ x: Math.random(), y: Math.random(), z: rand(0.2, 1), tw: rand(0, TAU) }))
+  // star flecks: z is depth (far ones are smaller, dimmer, slower); each drifts on its own heading
+  private dust = Array.from({ length: 220 }, () => {
+    const z = Math.pow(Math.random(), 1.6) * 0.85 + 0.15, h = rand(0, TAU)
+    return { x: Math.random(), y: Math.random(), z, tw: rand(0, TAU), tws: rand(0.3, 1.1), hx: Math.cos(h), hy: Math.sin(h), warm: Math.random() < 0.18 }
+  })
   private cam = { x: 0, y: 0, z: 1 }
   // Camera: 'auto' frames the whole network; 'manual' holds where the user put it; 'follow'
   // keeps one node centered. In Aquarium, manual eases back to auto after `autoReturnMs` idle.
@@ -570,10 +574,13 @@ export class Field {
     const { W, H, t, paint } = this
     paint.begin(W, H)
     for (const d of this.dust) {
-      const x = (((d.x * W + t * 3 * d.z) % W) + W) % W
-      const y = (((d.y * H + t * 1.2 * d.z) % H) + H) % H
-      const a = (0.15 + 0.25 * (0.5 + 0.5 * Math.sin(t * 0.8 + d.tw))) * d.z
-      paint.dust(x, y, d.z * 1.3, a)
+      // slow float (a few px per second) plus a slight parallax with the camera
+      const sp = 2.2 * d.z
+      const x = ((((d.x * W + d.hx * t * sp - this.cam.x * this.cam.z * d.z * 0.08) % W) + W) % W)
+      const y = ((((d.y * H + d.hy * t * sp - this.cam.y * this.cam.z * d.z * 0.08) % H) + H) % H)
+      const tw = 0.5 + 0.5 * Math.sin(t * d.tws + d.tw)
+      const a = (0.12 + 0.55 * tw * tw) * d.z
+      paint.dust(x, y, 0.8 + d.z * 2.2, a, d.warm)
     }
   }
 

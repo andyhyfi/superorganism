@@ -36,3 +36,9 @@ export const ago = (ms: number) => {
   const m = Math.round(s / 60)
   return m < 60 ? `${m}m` : `${Math.round(m / 60)}h`
 }
+
+/** USDC base units to a plain amount string for the input ("12.5", "100"). */
+export function fromUnits(u: bigint): string {
+  const w = u / 1_000_000n, f = (u % 1_000_000n).toString().padStart(6, '0').replace(/0+$/, '')
+  return f ? `${w}.${f}` : `${w}`
+}

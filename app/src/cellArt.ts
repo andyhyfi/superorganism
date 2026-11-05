@@ -109,28 +109,9 @@ export function bakeBackdrop(size = 1024): HTMLCanvasElement {
   const cv = document.createElement('canvas')
   cv.width = cv.height = size
   const c = cv.getContext('2d')!
+  // near-black purple, a touch lighter in the middle
   const g = c.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size * 0.72)
-  g.addColorStop(0, '#1a1342'); g.addColorStop(0.55, '#110c30'); g.addColorStop(1, '#07061a')
+  g.addColorStop(0, '#0d0818'); g.addColorStop(0.6, '#08050f'); g.addColorStop(1, '#030207')
   c.fillStyle = g; c.fillRect(0, 0, size, size)
-  // faint nebula clouds
-  const blobs: [number, number, number, string][] = [
-    [0.12, 0.2, 0.3, '110,80,220'], [0.88, 0.8, 0.34, '70,110,230'], [0.8, 0.1, 0.18, '150,70,200'],
-    [0.18, 0.88, 0.22, '60,120,200'], [0.55, 0.5, 0.45, '80,60,180'],
-  ]
-  for (const [x, y, r, col] of blobs) {
-    const b = c.createRadialGradient(x * size, y * size, 0, x * size, y * size, r * size)
-    b.addColorStop(0, `rgba(${col},0.12)`); b.addColorStop(0.6, `rgba(${col},0.05)`); b.addColorStop(1, `rgba(${col},0)`)
-    c.fillStyle = b; c.fillRect(0, 0, size, size)
-  }
-  // out-of-focus distant motes: soft rings
-  let s = 41
-  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647)
-  for (let i = 0; i < 26; i++) {
-    const x = rnd() * size, y = rnd() * size, r = 6 + rnd() * rnd() * 46
-    const hue = rnd() < 0.7 ? '120,150,255' : '200,110,230'
-    const b = c.createRadialGradient(x, y, r * 0.55, x, y, r * 1.25)
-    b.addColorStop(0, `rgba(${hue},0.02)`); b.addColorStop(0.55, `rgba(${hue},${0.07 + rnd() * 0.06})`); b.addColorStop(1, `rgba(${hue},0)`)
-    c.fillStyle = b; c.beginPath(); c.arc(x, y, r * 1.25, 0, Math.PI * 2); c.fill()
-  }
   return cv
 }

@@ -100,7 +100,7 @@ export class Painter {
       this.bg = new Sprite(this.tex.bg); this.bg.anchor.set(0.5); stage.addChild(this.bg)
       const layer = () => stage.addChild(new Container())
       this.pools = {
-        dust: new Pool(layer(), false), glow: new Pool(layer()), halo: new Pool(layer()), body: new Pool(layer(), false),
+        dust: new Pool(layer()), glow: new Pool(layer()), halo: new Pool(layer()), body: new Pool(layer(), false),
         speck: new Pool(layer()),
       }
       this.lines = new Graphics(); this.lines.blendMode = 'add'; stage.addChild(this.lines)
@@ -116,9 +116,10 @@ export class Painter {
     this.lines.clear()
   }
 
-  dust(x: number, y: number, size: number, alpha: number) {
-    const s = this.pools.dust.take(Texture.WHITE)
-    s.position.set(x, y); s.width = s.height = size; s.tint = 0xaac8ff; s.alpha = alpha
+  /** One star fleck: a soft round dot, white-lilac or faintly warm. */
+  dust(x: number, y: number, size: number, alpha: number, warm = false) {
+    const s = this.pools.dust.take(this.tex.dot)
+    s.position.set(x, y); s.width = s.height = size * 2.2; s.tint = warm ? 0xffe6c8 : 0xe4dcff; s.alpha = alpha
   }
 
   /** Wide soft glow in the cell's rim color; `boost` brightens it (selected cell). */

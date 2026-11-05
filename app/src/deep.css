@@ -139,3 +139,12 @@ button.cell:active { background: var(--fill-2); }
 }
 
 .hint-err { margin: 8px 0 0 16px; font-size: 13px; color: #ff9f8a; }
+
+.segmented.side { margin: 0 0 10px; }
+.amount { position: relative; }
+.amount .clear {
+  position: absolute; right: 64px; top: 50%; transform: translateY(-50%);
+  width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(255,255,255,0.12); color: var(--fg, #fff); border: 0;
+}
+.quick button:disabled { opacity: 0.35; }

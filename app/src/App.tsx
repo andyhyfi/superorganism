@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
-  assertLocalChain, readNodes, readEvents, claimOf, chancesAt, yourWallet, deposit, withdrawWhole,
+  assertLocalChain, readNodes, readEvents, claimOf, chancesAt, yourWallet, deposit, withdrawAmount,
   claimsOf, withdrawEverything, feesOwed, splitOdds,
   publicClient, you, PRESET, type ChainNode, type NetEvent,
 } from './chain'
@@ -34,7 +34,7 @@ export default function App() {
   const [fees, setFees] = useState(0n)
   const [odds, setOdds] = useState(0n)
   const [wallet, setWallet] = useState(0n)
-  const [amount, setAmount] = useState('10')
+  const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
 
   const [mode, setMode] = useState<Mode>('aquarium')
@@ -66,6 +66,7 @@ export default function App() {
     const field = fieldRef.current
     if (!field) return
     field.selected = id
+    setAmount('') // every cell starts from an empty amount
     if (id == null) { field.fitAll(); return setSel(null) }
     refreshSelected(id)
     setMode('deep')
@@ -285,7 +286,7 @@ export default function App() {
           onSelect={id => { select(id); fieldRef.current?.focus(id) }}
           onFocus={id => fieldRef.current?.focus(id)}
           onDeposit={() => sel && act('deposit', () => deposit(sel.id, units))}
-          onWithdraw={() => sel && act('withdraw', () => withdrawWhole(sel.id))}
+          onWithdraw={u => sel && act('withdraw', () => withdrawAmount(sel.id, u, sel.claim))}
           onWithdrawAll={() => act('withdrawAll', () => withdrawEverything(heldIds))}
           onClose={() => { select(null); setMode('aquarium') }}
         />
