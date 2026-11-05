@@ -1,4 +1,4 @@
-# Security review: Evolution v2 (energy loans)
+# Security review: Evolution v2 (energy loans, dissipation)
 
 Scope: `src/Evolution.sol` at the commit that last changed this file. Testnet only. This is an internal review, not an audit.
 
@@ -7,7 +7,7 @@ Scope: `src/Evolution.sol` at the commit that last changed this file. Testnet on
 - Slither 0.11.6, `lib/` and `test/` excluded: 0 findings, with `costly-loop` excluded (every loop is bounded: 5 sends per event, 50 nodes per withdrawAll, 4 loans out and 4 loan parts per node). `timestamp` is suppressed on the two lines that compare loan due times and the request timeout; a sequencer can shift a timestamp by seconds, which only moves energy.
 - Fixed earlier: `withdrawAll` wrote `feesAccrued` to storage once per node inside its loop (`costly-loop`). Fees now add up in memory and are written once.
 - Fixed with the two-layer roll: the curve's scale factor divided before multiplying (`divide-before-multiply`); it is now an exact constant.
-- Suppressed with a reason in code: Slither `incorrect-equality` on the 1-in-`splitOdds` draw (an exact match is intended); forge `reentrancy-events` on `Split` and `SplitRolled` (both are emitted before the only external call).
+- Suppressed with a reason in code: Slither `incorrect-equality` on the 1-in-`splitOdds` draw, the claim walk's root check, and the empty-fill check (each an intended exact match); forge `reentrancy-events` on `Split` and `SplitRolled` (both are emitted before the only external call).
 - Forge lint: 4 warnings remain, all reviewed and expected. Three flag error checks inside loops (batch guards). One flags the placeholder randomness.
 
 ## Manual review
@@ -24,6 +24,7 @@ Checked and holding:
 
 - **Loans cannot touch money.** `_take`, `_claim`, `withdraw` and `withdrawAll` pay from claims only. The loan repay inside a withdrawal writes flags only, with no check that can fail and no external call. A differential fuzz test proves withdrawals pay the same with and without loan events.
 - **Loan balance.** Energy lent out of live cells always equals energy borrowed by live cells (invariant).
+- **Dissipation cannot take money.** `dissipate` moves no tokens and changes no claim. It needs the node to hold under 0.01 USDC, have no active loan, and be quiet 5 minutes, and it never removes the last live node. A gone node only stops new deposits and loans; `withdraw` and `withdrawAll` still pay any leftover claim in it (unit test). Anyone can call it, so no keeper is trusted: the invariant suite calls it at random and checks it succeeds exactly when `canDissipate` says so.
 - **Operator.** Only the fixed operator address can run a loan event. It can choose randomness, so it can steer energy and split rolls, never claims.
 
 Known limits, open before real funds:
@@ -38,6 +39,7 @@ Known limits, open before real funds:
 7. **Operator liveness.** If the operator stops answering, loan events stop. Requests expire after 10 minutes; deposits and withdrawals are unaffected.
 8. **Gas per withdrawal.** Each node in a withdrawal repays at most `loansOutCap` loans (hard cap 4).
 9. **Event fee.** Set at deployment. The real Gelato VRF price on Ink is not confirmed; 0.01 USDC is a local placeholder.
+10. **Dissipation griefing.** A 1 USDC deposit into an empty node restarts its 5-minute clock, so anyone can keep an empty node alive by paying deposits. This costs the griefer money and harms nobody's funds.
 
 ## Before mainnet
 

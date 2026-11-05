@@ -48,6 +48,28 @@ async function answerRequests() {
   }
 }
 let answering = false
+// Keeper: anyone may call dissipate. Every 20 s, remove each empty node that has been quiet for
+// 5 minutes (the contract checks every condition; a node that does not qualify is never touched).
+let sweeping = false
+setInterval(async () => {
+  if (sweeping) return
+  sweeping = true
+  try {
+    const count = Number(await pub.readContract({ address: local.evolution, abi: evolutionAbi, functionName: 'nodeCount' }))
+    for (let id = 0; id < count; id++) {
+      const can = await pub.readContract({ address: local.evolution, abi: evolutionAbi, functionName: 'canDissipate', args: [BigInt(id)] })
+      if (!can) continue
+      const hash = await operator.writeContract({ address: local.evolution, abi: evolutionAbi, functionName: 'dissipate', args: [BigInt(id)] })
+      await pub.waitForTransactionReceipt({ hash })
+      console.log(`dissipate node ${String(id).padStart(3)}  (empty and quiet 5 min)`)
+    }
+  } catch (e) {
+    console.log('keeper:', e.shortMessage ?? e.message)
+  } finally {
+    sweeping = false
+  }
+}, 20_000)
+
 setInterval(async () => {
   if (answering) return
   answering = true
@@ -81,7 +103,7 @@ async function liveNodes() {
       pub.readContract({ address: E, abi: evolutionAbi, functionName: 'getNode', args: [BigInt(i)] }).then(n => ({ id: i, ...n })),
     ),
   )
-  return nodes.filter(n => !n.split)
+  return nodes.filter(n => !n.split && !n.gone)
 }
 
 const usd = x => (Number(x) / 1e6).toFixed(2)

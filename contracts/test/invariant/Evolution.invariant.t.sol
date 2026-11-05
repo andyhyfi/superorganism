@@ -101,9 +101,11 @@ contract EvolutionInvariantTest is Test {
     function invariant_liveListMatchesTree() public view {
         uint256 count = 0;
         for (uint256 i = 0; i < evo.nodeCount(); ++i) {
-            if (!evo.getNode(i).split) ++count;
+            Evolution.Node memory n = evo.getNode(i);
+            if (!n.split && !n.gone) ++count;
         }
         assertEq(evo.liveNodes().length, count);
+        assertGt(count, 0, "the network never empties");
     }
 
     /// Structure: children point at their parent, sit one level deeper, and copy its traits.
@@ -142,6 +144,7 @@ contract EvolutionInvariantTest is Test {
         emit log_named_uint("loan events", handler.events());
         emit log_named_uint("loans made", handler.loans());
         emit log_named_uint("nodes", n);
+        emit log_named_uint("dissipated", handler.dissipated());
 
         uint256 left = usdc.balanceOf(address(evo));
         assertEq(left, _liveTotals(), "balance differs from unowned fill");

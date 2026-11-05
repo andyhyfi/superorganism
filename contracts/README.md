@@ -22,6 +22,8 @@ slither .
   After each run every user withdraws everything; what remains must equal the unowned fill and stay under its rounding bound.
 - `test/Evolution.loans.t.sol`: energy loans, loan events, deposit limits. A differential fuzz test proves loans never change what withdrawals pay.
 - The invariant suite also runs loan events and lets time pass. After every step, energy lent out equals energy borrowed, and the live-node list matches the tree.
+- `test/Evolution.dissipate.t.sol`: dissipation. A node goes only when it is empty, has no loans, and has been quiet 5 minutes; never the last node; a gone node takes no deposits or loans; a rounding leftover in a gone node stays withdrawable.
+- The invariant suite also calls `dissipate` at random and checks that it succeeds exactly when `canDissipate` says so, and that the network never empties.
 - `test/utils/EvolutionHarness.sol`: test-only subclass that can force the split roll and the event roll.
 - `src/mocks/EvolutionDemo.sol`: LOCAL CHAIN ONLY. Evolution plus two test dials (split chance, event chance) that anyone can set; it refuses any chain but 31337. The production contract has no dials.
 
@@ -88,6 +90,18 @@ Users see a cell's size as energy. Money stays in exact USDC.
 - **Return.** A loan ends at its due time with no transaction. It also ends early when any user withdraws from the lender (a withdrawal repays every loan out of that cell; the repay only sets flags and cannot fail), or when the lender splits.
 - **Borrower splits.** Each child gets half of each loan part it held; the first child gets the odd base unit, so parts still sum to the loan.
 - **Limits.** `maxDeposit` per deposit and `maxPerUser` per user in total (net of fees), both 1,000 USDC at deployment.
+
+### Dissipation
+
+An empty node leaves the network after 5 minutes of quiet. Anyone can call `dissipate(nodeId)`; it succeeds only when all of these hold:
+
+1. The node is live: not split and not already gone.
+2. It holds less than `DUST` (0.01 USDC): rounding leftovers only, no real deposits.
+3. It has no active loan in or out.
+4. `QUIET_TIME` (5 minutes) has passed since its last activity. Activity is a deposit, a withdrawal, a split that made it, or a loan it joined; a loan counts until its due time, so an active loan always keeps a node.
+5. It is not the last live node.
+
+A gone node leaves the live list, takes no deposits, and is never picked for a loan. Its total is kept. Any claim in it (a rounding leftover below 0.01 USDC) stays withdrawable with `withdraw` or `withdrawAll`, so no user funds are lost. `canDissipate(nodeId)` tells keepers and the app when a call would succeed. On the local chain, the activity script runs the keeper every 20 s.
 
 ### What it does not have
 

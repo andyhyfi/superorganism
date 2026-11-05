@@ -169,7 +169,7 @@ type SortKey = 'total' | 'depth' | 'id'
 export function NetworkTab(p: DeepProps) {
   const [sort, setSort] = useState<SortKey>('total')
   const c = playerCtx(p)
-  const live = p.nodes.filter(n => !n.split)
+  const live = p.nodes.filter(n => !n.split && !n.gone)
   const total = live.reduce((a, n) => a + n.total, 0n)
   const maxDepth = live.reduce((a, n) => Math.max(a, n.depth), 0)
   const max = live.reduce((a, n) => (n.total > a ? n.total : a), 1n)

@@ -65,6 +65,8 @@ contract Evolution is ReentrancyGuard {
         uint128 total; // the node's own energy: every claim it holds, plus rounding remainders
         Traits traits;
         LoanRules loanRules;
+        uint40 busyUntil; // last activity: a deposit, withdrawal or split, or the end of a loan it is in
+        bool gone; // dissipated: out of the network for good, but every claim in it stays withdrawable
     }
 
     struct Position {
@@ -129,6 +131,8 @@ contract Evolution is ReentrancyGuard {
     uint256 public constant LOAN_MIN_PPM = 50_000; // a loan is 5% to 20% of the lender's own energy
     uint256 public constant LOAN_MAX_PPM = 200_000;
     uint256 public constant REQUEST_TIMEOUT = 10 minutes; // an unanswered event request expires
+    uint256 public constant QUIET_TIME = 5 minutes; // an empty node dissipates after this long with no activity
+    uint256 public constant DUST = 10_000; // 0.01 USDC: an empty node may hold less than this in rounding leftovers
     uint256 internal constant MAX_RATIO = 1e27; // fill / mid capped at 1e9 (scaled); chance is the cap there
     uint256 internal constant PPM_TO_WAD = 1e12; // WAD / PPM, exact
 
@@ -181,6 +185,7 @@ contract Evolution is ReentrancyGuard {
         uint256 indexed loanId, uint256 indexed lender, uint256 indexed borrower, uint256 amount, uint256 due
     );
     event LoanRepaid(uint256 indexed loanId, uint256 indexed lender);
+    event Dissipated(uint256 indexed nodeId, uint256 leftover);
 
     // --------------------------------------------------------------- errors
 
@@ -201,6 +206,11 @@ contract Evolution is ReentrancyGuard {
     error BatchTooLarge(uint256 length, uint256 max);
     error NothingToWithdraw();
     error NotOperator();
+    error NodeGone(uint256 nodeId);
+    error NotEmpty(uint256 nodeId, uint256 total);
+    error HasLoans(uint256 nodeId);
+    error NotQuiet(uint256 nodeId, uint256 quietAt);
+    error LastNode();
 
     // Slither notes, reviewed: `timestamp` (loan due times and the request timeout compare
     // block.timestamp on purpose; a sequencer can shift it by seconds, which only moves energy);
@@ -237,7 +247,15 @@ contract Evolution is ReentrancyGuard {
         splitOdds = c.splitOdds;
 
         _nodes[ROOT] = Node({
-            parent: 0, firstChild: 0, depth: 0, split: false, total: 0, traits: rootTraits, loanRules: rootLoans
+            parent: 0,
+            firstChild: 0,
+            depth: 0,
+            split: false,
+            total: 0,
+            traits: rootTraits,
+            loanRules: rootLoans,
+            busyUntil: uint40(block.timestamp),
+            gone: false
         });
         nodeCount = 1;
         _liveIds.push(ROOT);
@@ -252,6 +270,7 @@ contract Evolution is ReentrancyGuard {
     /// goes to the treasury to pay for the random number.
     function deposit(uint256 nodeId, uint256 amount) external nonReentrant {
         Node storage node = _live(nodeId);
+        if (node.gone) revert NodeGone(nodeId);
         if (amount < minDeposit) revert BelowMinDeposit(amount, minDeposit);
         if (amount > maxDeposit) revert AboveMaxDeposit(amount, maxDeposit);
 
@@ -265,6 +284,7 @@ contract Evolution is ReentrancyGuard {
         pos.own += credit;
         node.total += credit;
         feesAccrued += fee;
+        _touch(nodeId);
 
         emit Deposited(nodeId, msg.sender, amount, fee);
 
@@ -324,6 +344,39 @@ contract Evolution is ReentrancyGuard {
         feesAccrued = 0;
         emit FeesSwept(treasury, amount);
         token.safeTransfer(treasury, amount);
+    }
+
+    /// @notice Removes an empty, quiet node from the network. Anyone can call.
+    /// Conditions, all required: the node is live and not already gone; it holds less than `DUST`
+    /// (rounding leftovers only); it has no active loan in or out; `QUIET_TIME` has passed since
+    /// its last activity (`busyUntil`); and it is not the last live node.
+    /// A gone node takes no deposits and no loans and leaves the live list. Its total is kept, and
+    /// any claim in it (a rounding leftover) stays withdrawable: no user funds are lost.
+    function dissipate(uint256 nodeId) external nonReentrant {
+        Node storage node = _live(nodeId);
+        if (node.gone) revert NodeGone(nodeId);
+        if (node.total >= DUST) revert NotEmpty(nodeId, node.total);
+        if (_activeLent(nodeId) != 0 || _activeBorrowed(nodeId) != 0) revert HasLoans(nodeId);
+        uint256 quietAt = uint256(node.busyUntil) + QUIET_TIME;
+        // slither-disable-next-line timestamp
+        if (block.timestamp < quietAt) revert NotQuiet(nodeId, quietAt);
+        if (_liveIds.length <= 1) revert LastNode();
+
+        node.gone = true;
+        delete _lent[nodeId];
+        delete _borrowed[nodeId];
+        _removeLive(nodeId);
+        emit Dissipated(nodeId, node.total);
+    }
+
+    /// @notice True when `dissipate(nodeId)` would succeed now. For keepers and the app.
+    function canDissipate(uint256 nodeId) external view returns (bool) {
+        if (nodeId >= nodeCount) return false;
+        Node storage node = _nodes[nodeId];
+        // slither-disable-next-line timestamp
+        return !node.split && !node.gone && node.total < DUST && _activeLent(nodeId) == 0
+            && _activeBorrowed(nodeId) == 0 && block.timestamp >= uint256(node.busyUntil) + QUIET_TIME
+            && _liveIds.length > 1;
     }
 
     /// @notice Runs the open loan event with `randomness`. Only the randomness operator can call.
@@ -469,7 +522,8 @@ contract Evolution is ReentrancyGuard {
                 }
                 return c;
             }
-            if (n == ROOT) return 0;
+            // slither-disable-next-line incorrect-equality
+            if (n == ROOT) return 0; // intended exact match: the walk stops at the root
             n = _nodes[n].parent;
         }
         return 0;
@@ -506,6 +560,7 @@ contract Evolution is ReentrancyGuard {
         heldOf[user] = held > amount ? held - amount : 0;
 
         _repayAll(nodeId);
+        _touch(nodeId);
 
         fee = (amount * node.traits.feePpm) / PPM;
         payout = amount - fee;
@@ -572,7 +627,9 @@ contract Evolution is ReentrancyGuard {
             split: false,
             total: half,
             traits: node.traits,
-            loanRules: node.loanRules
+            loanRules: node.loanRules,
+            busyUntil: uint40(block.timestamp),
+            gone: false
         });
         _nodes[c0] = child;
         _nodes[c0 + 1] = child;
@@ -588,6 +645,8 @@ contract Evolution is ReentrancyGuard {
             if (second != 0) _borrowed[c0 + 1].push(Borrowed(p.loanId, second));
         }
         delete _borrowed[nodeId];
+        _touch(c0);
+        _touch(c0 + 1);
 
         _removeLive(nodeId);
         _addLive(c0);
@@ -626,6 +685,8 @@ contract Evolution is ReentrancyGuard {
         });
         _lent[lender].push(id.toUint64());
         _borrowed[borrower].push(Borrowed(id.toUint64(), amount.toUint128()));
+        _touch(lender);
+        _touch(borrower);
         // forge-lint: disable-next-line(reentrancy-events)
         emit LoanMade(id, lender, borrower, amount, due);
         return true;
@@ -691,6 +752,23 @@ contract Evolution is ReentrancyGuard {
         return base + (borrowed < base ? borrowed : base);
     }
 
+    /// @dev Records activity: `busyUntil` becomes the later of now and the due time of every active
+    /// loan the node is in (at most 4 out and 4 in). A node can dissipate only `QUIET_TIME` after it.
+    function _touch(uint256 nodeId) internal {
+        uint256 busy = block.timestamp;
+        uint64[] storage ids = _lent[nodeId];
+        for (uint256 i = 0; i < ids.length; ++i) {
+            Loan storage l = _loans[ids[i]];
+            if (_loanActive(l) && l.due > busy) busy = l.due;
+        }
+        Borrowed[] storage parts = _borrowed[nodeId];
+        for (uint256 i = 0; i < parts.length; ++i) {
+            Loan storage l = _loans[parts[i].loanId];
+            if (_loanActive(l) && l.due > busy) busy = l.due;
+        }
+        _nodes[nodeId].busyUntil = busy.toUint40();
+    }
+
     function _addLive(uint256 nodeId) internal {
         _liveIndex[nodeId] = _liveIds.length;
         _liveIds.push(nodeId);
@@ -732,7 +810,8 @@ contract Evolution is ReentrancyGuard {
     /// With cap 10% and midpoint 300 USDC: 1 USDC -> 0.0001%, 100 USDC -> 1%, 300 USDC -> 5%,
     /// 1,000 USDC -> about 9.2%.
     function _rollChance(uint256 fill, Traits memory t) internal pure returns (uint256) {
-        if (fill == 0) return 0;
+        // slither-disable-next-line incorrect-equality
+        if (fill == 0) return 0; // intended exact match: an empty node has no chance
         uint256 r = Math.mulDiv(fill, WAD, t.rollMidFill);
         if (r > MAX_RATIO) r = MAX_RATIO;
         uint256 r2 = r * r; // at most 1e54

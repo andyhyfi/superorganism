@@ -26,6 +26,7 @@ const WATER = {
   emptyBand: 90, // how wide the waiting ring is; its outer edge is the outer boundary
   splitPush: 70, // how hard the two halves of a split push apart (they glide off, then the water slows them)
   shove: 9, // how much momentum a dividing cell gives the neighbors it pushes aside
+  fadeSeconds: 4, // how long a dissipated cell takes to fade away
   escape: 4, // speed per unit of overlap a squeezed cell gets, so contact always beats the inward pull
 }
 
@@ -78,6 +79,7 @@ type VNode = {
   hue: number
   sp: number // species (look); placeholder: from lineage, later from mutations
   lit: number // 0..1, the selection light
+  fading?: number // 1 -> 0 while a dissipated cell fades away
   squeezed?: boolean // overlapping at the end of the last step: its inward pull eases until it is free
   dim: number // 0..1, how far the cell has gone dark (empty cells)
   variant: number
@@ -158,6 +160,7 @@ export class Field {
   // ------------------------------------------------------------ lifecycle
 
   start() {
+    this.booted = true
     this.last = performance.now()
     const frame = (now: number) => {
       const dt = Math.min(0.05, (now - this.last) / 1000)
@@ -202,6 +205,15 @@ export class Field {
         }
         continue
       }
+      if (c.gone) {
+        // dissipated: a cell on screen fades away where it waits, then leaves for good.
+        // Replayed history (instant) or a cell long gone: removed at once.
+        if (v && v.fading === undefined) {
+          if (this.booted) v.fading = 1
+          else { this.nodes.delete(c.id); if (this.selected === c.id) this.selected = null }
+        }
+        continue
+      }
       if (v) {
         v.total = total
         v.mid = mid
@@ -210,6 +222,9 @@ export class Field {
       }
     }
   }
+
+  /** False while the page builds the network from history; set by start(). */
+  private booted = false
 
   /** Active loans, from chain. A loan that disappears (repaid, or due) sends its energy home. */
   setLinks(links: LoanLink[]) {
@@ -423,7 +438,11 @@ export class Field {
     this.outerR = !this.outerR ? outerWant : this.outerR + (outerWant - this.outerR) * Math.min(1, dt * 0.3)
     for (const n of this.nodes.values()) {
       if (!n.splitting) n.r += (radiusOf(n.total) - n.r) * Math.min(1, dt * 1.5)
-      n.alpha += (1 - n.alpha) * Math.min(1, dt * 1.2)
+      if (n.fading !== undefined) {
+        n.fading = Math.max(0, n.fading - dt / WATER.fadeSeconds)
+        n.alpha = n.fading
+        n.r *= 1 + dt * 0.08 // swells slightly as it disperses
+      } else n.alpha += (1 - n.alpha) * Math.min(1, dt * 1.2)
       n.lit += ((this.selected === n.id ? 1 : 0) - n.lit) * Math.min(1, dt * 1.6)
       n.dim += ((n.total <= EMPTY ? 1 : 0) - n.dim) * Math.min(1, dt * 0.25) // fades over several seconds
       // very slow water: a gentle swirling current that changes over minutes
@@ -456,6 +475,14 @@ export class Field {
       n.vy += (wy - n.vy) * settle
       n.x += n.vx * dt
       n.y += n.vy * dt
+    }
+
+    for (const [id, n] of this.nodes) {
+      if (n.fading !== undefined && n.fading <= 0) {
+        this.nodes.delete(id)
+        if (this.selected === id) this.selected = null
+        this.links = this.links.filter(l => l.lender !== id && l.holder !== id)
+      }
     }
 
     // the dish: sized to the cells it holds, resizing slowly

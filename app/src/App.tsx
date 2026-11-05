@@ -53,7 +53,7 @@ export default function App() {
   const [, setReveal] = useState(0) // dev: re-render after toggling reveal-all
 
   const refreshMine = async (all: ChainNode[]) => {
-    const live = all.filter(n => !n.split).map(n => n.id)
+    const live = all.filter(n => !n.split && !n.gone).map(n => n.id)
     const [c, f, w, h] = await Promise.all([claimsOf(live), feesOwed(), yourWallet(), yourHeld()])
     setClaims(new Map(live.map((id, i) => [id, c[i]])))
     setFees(f)
@@ -64,7 +64,7 @@ export default function App() {
   // ------------------------------------------------------------ selection
   const refreshSelected = useCallback(async (id: number) => {
     const node = nodesRef.current[id]
-    if (!node || node.split) return setSel(null)
+    if (!node || node.split || (node.gone && !(claims.get(id) ?? 0n))) return setSel(null)
     const [claim, ch] = await Promise.all([claimOf(id), chancesAt(id, node.rollFill)])
     if (fieldRef.current?.selected !== id) return
     setSel({ id, total: node.total, energy: node.energy, lent: node.lent, borrowed: node.borrowed, claim, roll: ch.roll, split: ch.split })
@@ -186,7 +186,7 @@ export default function App() {
   // keep the selected node's numbers fresh; drop it if it split
   useEffect(() => {
     if (sel == null) return
-    if (nodes[sel.id]?.split) {
+    if (nodes[sel.id]?.split || (nodes[sel.id]?.gone && !(claims.get(sel.id) ?? 0n))) {
       if (fieldRef.current) fieldRef.current.selected = null
       setSel(null)
       return
@@ -265,7 +265,7 @@ export default function App() {
   const heldIds = [...claims.entries()].filter(([, c]) => c > 0n).map(([id]) => id)
 
   // ---------------------------------------------------------------- view
-  const live = nodes.filter(n => !n.split).length
+  const live = nodes.filter(n => !n.split && !n.gone).length
   const overlay = mode === 'aquarium' && chrome && !idle
   const ctrlCls = [
     'controls glass membrane',
@@ -358,11 +358,11 @@ function friendly(e: unknown): string {
 function replay(field: Field, finalNodes: ChainNode[], history: NetEvent[]) {
   // Start with the root only; every other node is born from a split event.
   const root = finalNodes[0]
-  field.sync([{ ...root, split: false }])
+  field.sync([{ ...root, split: false, gone: false }])
   for (const e of history) {
     field.apply([e], true)
     if (e.kind === 'split') {
-      const kids = [finalNodes[e.c0], finalNodes[e.c1]].filter(Boolean).map(k => ({ ...k, split: false }))
+      const kids = [finalNodes[e.c0], finalNodes[e.c1]].filter(Boolean).map(k => ({ ...k, split: false, gone: false }))
       field.sync(kids)
     }
   }

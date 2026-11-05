@@ -36,6 +36,7 @@ export type ChainNode = {
   firstChild: number
   depth: number
   split: boolean
+  gone: boolean // dissipated: out of the network; any leftover claim stays withdrawable
   total: bigint // own energy: user claims plus rounding fill (real USDC)
   traits: Traits
   loanRules: LoanRules
@@ -73,7 +74,7 @@ export async function readNetwork(): Promise<{ nodes: ChainNode[]; links: LoanLi
   const raw = await Promise.all(
     ids.map(id => publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'getNode', args: [BigInt(id)] })),
   )
-  const liveIds = ids.filter(id => !raw[id].split)
+  const liveIds = ids.filter(id => !raw[id].split && !raw[id].gone)
   const parts = await Promise.all(
     liveIds.map(id => publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'loansIn', args: [BigInt(id)] })),
   )
@@ -94,6 +95,7 @@ export async function readNetwork(): Promise<{ nodes: ChainNode[]; links: LoanLi
       firstChild: Number(n.firstChild),
       depth: Number(n.depth),
       split: n.split,
+      gone: n.gone,
       total: n.total,
       traits: { feePpm: Number(n.traits.feePpm), rollCapPpm: Number(n.traits.rollCapPpm), rollMidFill: n.traits.rollMidFill },
       loanRules: {

@@ -106,6 +106,21 @@ contract Handler is Test {
         ++calls;
     }
 
+    uint256 public dissipated;
+
+    /// Tries to dissipate a node. Must succeed exactly when canDissipate says so.
+    function dissipate(uint256 seed) external {
+        uint256 id = seed % evo.nodeCount();
+        bool can = evo.canDissipate(id);
+        try evo.dissipate(id) {
+            require(can, "dissipated a node canDissipate rejected");
+            ++dissipated;
+        } catch {
+            require(!can, "canDissipate said yes but dissipate failed");
+        }
+        ++calls;
+    }
+
     /// Time passes, so loans reach their due time.
     function wait(uint256 secs) external {
         vm.warp(block.timestamp + bound(secs, 1, 2 hours));
@@ -124,7 +139,8 @@ contract Handler is Test {
         uint256 start = seed % n;
         for (uint256 i = 0; i < n; ++i) {
             uint256 id = (start + i) % n;
-            if (!evo.getNode(id).split) return id;
+            Evolution.Node memory node = evo.getNode(id);
+            if (!node.split && !node.gone) return id;
         }
         revert("no live node"); // unreachable: every split adds two live nodes
     }
