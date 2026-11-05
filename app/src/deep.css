@@ -124,6 +124,7 @@ button.cell:active { background: var(--fill-2); }
 .badge.in { background: rgba(106, 168, 255, 0.18); color: var(--accent); }
 .badge.out { background: rgba(255, 255, 255, 0.1); color: var(--text-2); }
 .badge.split { background: rgba(255, 204, 92, 0.18); color: var(--gold); }
+.badge.lend { background: rgba(160, 130, 255, 0.16); color: #b9a6ff; }
 
 /* touch: tabs and close reach a comfortable target size */
 @media (pointer: coarse) {
@@ -223,3 +224,20 @@ button.cell:active { background: var(--fill-2); }
   .lineage-panel { width: 100vw; height: 78vh; border-radius: 22px 22px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
 }
 @media (prefers-reduced-motion: reduce) { .lineage, .lineage-panel { animation: none; } }
+
+/* Ink points mark beside the specimen name: dim at rest; while you feed this specimen it glows
+   and breathes slowly (4 s), an outline of light swelling and fading around the disc */
+.cell-name { display: flex; align-items: center; gap: 8px; }
+.ink-mark { display: inline-flex; flex: none; position: relative; color: rgba(158, 112, 255, 0.38); transition: color 0.8s ease; }
+.ink-mark::after { content: ''; position: absolute; inset: -3px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(158, 112, 255, 0); pointer-events: none; }
+.ink-mark.on { color: #9E70FF; filter: drop-shadow(0 0 4px rgba(158, 112, 255, 0.75)); animation: ink-breathe 4s ease-in-out infinite; }
+.ink-mark.on::after { animation: ink-ring 4s ease-in-out infinite; }
+@keyframes ink-breathe {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(158, 112, 255, 0.45)); opacity: 0.85; }
+  50% { filter: drop-shadow(0 0 7px rgba(158, 112, 255, 0.95)); opacity: 1; }
+}
+@keyframes ink-ring {
+  0%, 100% { box-shadow: 0 0 0 0.5px rgba(158, 112, 255, 0.15); transform: scale(0.92); }
+  50% { box-shadow: 0 0 0 1px rgba(158, 112, 255, 0.6), 0 0 8px rgba(158, 112, 255, 0.35); transform: scale(1.08); }
+}
+@media (prefers-reduced-motion: reduce) { .ink-mark.on, .ink-mark.on::after { animation: none; } }

@@ -1,12 +1,14 @@
 // The four Deep tabs. Words come from reveal.ts (t), and every optional section asks shown()
 // first, so what a player sees can be gated by holdings, deposits, or mutations.
 import { useState, type ReactNode } from 'react'
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Info, Spline, X } from 'lucide-react'
+import { ChevronRight, Info, X } from 'lucide-react'
+import { DivisionGlyph, DrawGlyph, FeedGlyph, LendGlyph } from './Glyphs'
 import type { DeepProps } from './Deep'
 import { cleanAmount, fmtPct, fmtUsd, fromUnits, short, toUnits } from './format'
 import { shown, t, type Ctx, type InfoId } from './reveal'
 import { nameOf } from './names'
 import { Rolling } from './Rolling'
+import { InkMark } from './InkMark'
 import { LineageIcon, LineageMap } from './Lineage'
 import { createPortal } from 'react-dom'
 
@@ -62,7 +64,7 @@ export function NodeTab(p: DeepProps) {
   return (
     <>
       <div className="hero">
-        <div className="cell-name">{nameOf(s.id)}</div>
+        <div className="cell-name">{nameOf(s.id)}<InkMark active={s.claim > 0n} /></div>
         <div className="label">
           {shown('cell.lineage', c)
             ? <button className="icon-btn" aria-label={t('cell.lineage')} title={t('cell.lineage')} onClick={() => setMapOpen(true)}><LineageIcon /></button>
@@ -296,7 +298,7 @@ function FeedList({ p, rows }: { p: DeepProps; rows: DeepProps['feed'] }) {
           const to = e.kind === 'loan' ? e.borrower : e.lender
           return (
             <button key={e.key} className="cell" onClick={() => !p.nodes[to]?.split && p.onSelect(to)}>
-              <span className="badge split"><Spline size={16} strokeWidth={2.25} /></span>
+              <span className="badge lend"><LendGlyph /></span>
               <span className="k">{e.kind === 'loan' ? t('feed.loan') : t('feed.repay')}<span className="sub">{e.kind === 'loan' ? `${nameOf(e.lender)} → ${nameOf(e.borrower)}` : `→ ${nameOf(e.lender)}`}</span></span>
               {e.kind === 'loan' && <span className="v">{fmtUsd(e.amount)}</span>}
             </button>
@@ -306,9 +308,9 @@ function FeedList({ p, rows }: { p: DeepProps; rows: DeepProps['feed'] }) {
         const mine = e.kind !== 'split' && e.user.toLowerCase() === me
         return (
           <button key={e.key} className="cell" onClick={() => !p.nodes[target]?.split && p.onSelect(target)}>
-            {e.kind === 'deposit' && <span className="badge in"><ArrowDownLeft size={16} strokeWidth={2.25} /></span>}
-            {e.kind === 'withdraw' && <span className="badge out"><ArrowUpRight size={16} strokeWidth={2.25} /></span>}
-            {e.kind === 'split' && <span className="badge split"><GitFork size={16} strokeWidth={2.25} /></span>}
+            {e.kind === 'deposit' && <span className="badge in"><FeedGlyph /></span>}
+            {e.kind === 'withdraw' && <span className="badge out"><DrawGlyph /></span>}
+            {e.kind === 'split' && <span className="badge split"><DivisionGlyph /></span>}
             <span className="k">
               {e.kind === 'split' ? t('feed.split') : e.kind === 'deposit' ? t('feed.deposit') : t('feed.withdraw')}
               <span className="sub">{e.kind === 'split' ? `${nameOf(e.parent)} → ${nameOf(e.c0)}, ${nameOf(e.c1)}` : `${mine ? 'You' : short(e.user)} · ${nameOf(e.node)}`}</span>

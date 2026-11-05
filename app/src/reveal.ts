@@ -137,6 +137,9 @@ export const INFO = {
   'net.seeLoans': { label: 'Colony mass loans', rule: networkRule('loans') },
 
   // Yours tab: your own history
+  // Ink points (rewards for feeding; amounts are never stated)
+  'ink.points': { label: 'Ink points', rule: { always: true } },
+
   // sorting the colony list
   'sort.mass': { label: 'Mass', rule: { always: true } },
   'sort.youngest': { label: 'Youngest', rule: { always: true } },
