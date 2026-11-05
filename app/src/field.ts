@@ -22,6 +22,7 @@ const WATER = {
   gap: 6, // space kept between membranes
   room: 1.9, // dish size relative to the cells it holds (bigger = more open water)
   emptyDrift: 9, // how fast an emptied cell drifts outward (px/s)
+  splitPush: 70, // how hard the two halves of a split push apart (they glide off, then the water slows them)
 }
 
 /** A cell at or below this many USDC counts as empty: it goes dark and drifts to the edge. */
@@ -81,6 +82,15 @@ const LOANS = {
   burstSeconds: 1.8, // how long a send or a return takes to cross
   bow: 0.18, // how far the thread curves out of a straight line
   selectedGlow: 2.6, // how much brighter a selected cell's threads get (eases with the selection light)
+}
+
+// Specks that orbit each cell along its thin outline, like the specks on loan threads.
+const ORBIT = {
+  min: 2, // specks on the smallest cell
+  max: 6, // specks on the largest
+  perRadius: 28, // one more speck per this many world units of radius
+  speed: 0.16, // radians per second (one lap in about 40 s; direction follows the cell's own spin)
+  brightness: 0.75, // speck brightness on a live cell (an empty cell's specks fade with it)
 }
 
 export class Field {
@@ -337,10 +347,10 @@ export class Field {
       return {
         id,
         x: n.x + ux * off * s, y: n.y + uy * off * s,
-        vx: ux * 18 * s, vy: uy * 18 * s, // the halves part gently, then the water takes over
+        vx: ux * WATER.splitPush * s, vy: uy * WATER.splitPush * s, // the halves part, then the water slows them
         r: rc, total: n.total / 2, mid: n.mid,
         hue: n.hue + (id % 2 ? 9 : -9),
-        sp: id % 2 === 0 ? (n.sp + 1 + (id % 5)) % SPECIES.length : n.sp, variant: id, lit: 0, dim: n.dim,
+        sp: n.sp, variant: id, lit: 0, dim: n.dim, // both halves keep the parent's color
         phase: n.phase, spin: n.spin,
         // every claim halves into each child, so both children carry every depositor
         bubbles: n.bubbles.filter(b => !b.out).map(b => ({ ...b, amount: b.amount / 2, a: b.a + i * 1.3, in: 1 })),
@@ -710,6 +720,29 @@ export class Field {
       0.22 * alpha * (1 - 0.6 * n.dim),
       1,
     )
+    if (!lobes) this.drawOrbit(n, x, y, r, alpha)
+  }
+
+  /** Specks gliding around the cell on its outline, each breathing slowly in and out. */
+  private drawOrbit(n: VNode, x: number, y: number, r: number, alpha: number) {
+    const live = 1 - n.dim
+    const a0 = ORBIT.brightness * alpha * (0.15 + 0.85 * live)
+    if (a0 < 0.01 || r < 4) return
+    const count = Math.min(ORBIT.max, ORBIT.min + Math.floor(n.r / ORBIT.perRadius))
+    const speck = hex(SPECIES[n.sp].speck), core = hex(SPECIES[n.sp].core)
+    const scale = Math.max(0.6, Math.min(1.6, this.cam.z))
+    const size = (1.7 + Math.sqrt(Math.max(0, n.total)) * 0.06) * scale * (1 + 0.35 * n.lit)
+    for (let k = 0; k < count; k++) {
+      // uneven spacing and a slight speed difference per speck, so they drift past each other
+      const ang = n.phase * 3 + (k / count) * TAU + Math.sin(k * 2.1 + n.phase) * 0.5
+        + this.t * ORBIT.speed * Math.sign(n.spin) * (1 + 0.18 * Math.sin(k * 1.7 + n.variant))
+      const rr = r * this.wob(n, ang, 1)
+      const px = x + Math.cos(ang) * rr, py = y + Math.sin(ang) * rr
+      const breathe = 0.55 + 0.45 * Math.sin(this.t * (0.5 + 0.13 * k) + k * 1.9 + n.phase)
+      const a = Math.min(1, a0 * breathe * (1 + 0.6 * n.lit))
+      this.paint.speck(px, py, size, speck, a)
+      this.paint.speck(px, py, size * 2.6, core, 0.26 * a)
+    }
   }
 
   /** A point on the curved thread from cell a to cell b, membrane to membrane. q runs 0 to 1. */
@@ -730,6 +763,7 @@ export class Field {
     for (const l of this.links) {
       const a = this.nodes.get(l.lender), b = this.nodes.get(l.holder)
       if (!a || !b || a.splitting || b.splitting) continue
+      if (Math.hypot(b.x - a.x, b.y - a.y) - a.r - b.r < 14) continue // touching cells: no room for a thread
       const amount = Number(l.amount) / 1e6
       const bow = (l.loanId % 2 ? 1 : -1) * LOANS.bow
       const rim = hex(SPECIES[a.sp].rim), speck = hex(SPECIES[a.sp].speck), core = hex(SPECIES[a.sp].core)

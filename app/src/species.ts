@@ -33,8 +33,8 @@ export const SPECIES: Species[] = [
 export const hex = (c: string) => parseInt(c.slice(1), 16)
 
 /** Species for a cell from its lineage: half the children keep the parent's look, half shift. */
-export function speciesOf(path: number[]): number {
-  let s = 0
-  for (const id of path) if (id % 2 === 0) s = (s + 1 + (id % 5)) % SPECIES.length
-  return s
+export function speciesOf(_path: number[]): number {
+  // A split keeps the parent's color: every child inherits its species. Color changes will come
+  // from mutations later. Placeholder: every lineage starts from the root's species.
+  return 0
 }
