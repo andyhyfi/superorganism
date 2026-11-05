@@ -76,11 +76,7 @@ export const INFO = {
 
   // a cell
   'cell.balance': { label: 'Balance', rule: { always: true } },
-  'cell.yourShare': { label: 'Yours', rule: { always: true } },
-  'cell.ofDeposits': { label: 'of deposits', rule: { always: true } },
-  'cell.depositedShort': { label: 'deposited', rule: { always: true } },
-  'cell.showOnMap': { label: 'Show on map', rule: { always: true } },
-  'cell.energyUnit': { label: 'energy', rule: { always: true } },
+  'cell.observe': { label: 'Observe', rule: { always: true } },
   'cell.deposits': { label: 'Deposited here', rule: { always: true }, note: 'money rule: keep visible' },
   'cell.loans': { label: 'Energy on loan', rule: { always: true } },
   'cell.lentTo': { label: 'Lent to', rule: { always: true } },
@@ -90,8 +86,8 @@ export const INFO = {
     label: 'Cells lend each other energy for a while. Loans move no money: what you deposited stays yours, and you can always withdraw it.',
     rule: { always: true },
   },
-  'cell.maximum': { label: 'Maximum deposit', rule: { always: true }, note: 'money rule: keep visible' },
-  'cell.eventFee': { label: 'Event fee (sometimes)', rule: { always: true }, note: 'money rule: keep visible' },
+  'cell.maximum': { label: 'Max', rule: { always: true }, note: 'money rule: keep visible' },
+  'cell.eventFee': { label: 'Event fee', rule: { always: true }, note: 'money rule: keep visible. Charged only on a deposit that starts a loan event. Rename pending (Andy)' },
   'cell.divideChance': { label: 'Chance this cell divides', rule: { heldHere: 10 }, note: 'placeholder gate' },
   'cell.fillCheck': { label: 'Fill check', rule: { heldHere: 100 }, note: 'placeholder gate' },
   'cell.divideOdds': { label: 'Then divides', rule: { heldHere: 100 }, note: 'placeholder gate' },
@@ -101,7 +97,7 @@ export const INFO = {
   },
   'cell.generation': { label: 'Generation', rule: { deposits: 3 }, note: 'placeholder gate' },
   'cell.fee': { label: 'Fee', rule: { always: true }, note: 'money rule: keep visible' },
-  'cell.minimum': { label: 'Minimum', rule: { always: true }, note: 'money rule: keep visible' },
+  'cell.minimum': { label: 'Min', rule: { always: true }, note: 'money rule: keep visible' },
   'cell.lineage': { label: 'Lineage', rule: { heldTotal: 50 }, note: 'placeholder gate' },
   'cell.lineageExplainer': { label: 'Each cell came from its parent dividing.', rule: { heldTotal: 50 } },
   'cell.traits': { label: 'Mutations', rule: { trait: 'any' }, note: 'appears once mutations exist' },
@@ -127,7 +123,7 @@ export const INFO = {
   'hud.myCells': { label: 'My cells', rule: { always: true } },
 
   // the network
-  'net.held': { label: 'Held across the network', rule: { always: true } },
+  'net.held': { label: 'Network size', rule: { always: true } },
   'net.counts': { label: 'cells', rule: { always: true } },
   'net.splits': { label: 'splits', rule: { deposits: 1 } },
   'net.generations': { label: 'generations', rule: { heldTotal: 50 } },
@@ -148,8 +144,6 @@ export const INFO = {
   'feed.loan': { label: 'Energy lent', rule: { always: true } },
   'feed.repay': { label: 'Energy returned', rule: { always: true } },
   'feed.empty': { label: 'Quiet for now', rule: { always: true } },
-  'feed.locked': { label: 'Network activity is hidden', rule: { always: true } },
-  'feed.lockedHint': { label: 'Deposit more to see what other players do.', rule: { always: true } },
 
   // Activity tab: what other players do. Each kind unlocks at its own level (USDC deposited). Levels and the master switch live in NETWORK_ACTIVITY below.
   'net.seeDeposits': { label: 'Network deposits', rule: networkRule('deposits') },
@@ -162,8 +156,6 @@ export const INFO = {
   'you.noActivity': { label: 'No activity yet', rule: { always: true } },
 
   // empty states
-  'empty.noCell': { label: 'No node selected', rule: { always: true } },
-  'empty.noCellHint': { label: 'Tap a node in the network to see it here.', rule: { always: true } },
 } satisfies Record<string, Entry>
 
 export type InfoId = keyof typeof INFO

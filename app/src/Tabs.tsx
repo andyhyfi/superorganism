@@ -33,7 +33,7 @@ const pulse = (e: React.MouseEvent<HTMLButtonElement>) => {
 
 export function NodeTab(p: DeepProps) {
   const s = p.selected
-  if (!s) return <Empty title={t('empty.noCell')} text={t('empty.noCellHint')} />
+  if (!s) return <Empty />
   const c = playerCtx(p, s.claim)
   const node = p.nodes[s.id]
   const lineage: number[] = []
@@ -65,11 +65,11 @@ export function NodeTab(p: DeepProps) {
         <div className="cell-name">{nameOf(s.id)}</div>
         <div className="label">
           <span>{t('cell.balance')}</span>
-          <button className="text-btn" onClick={() => p.onFocus(s.id)}>{t('cell.showOnMap')}</button>
+          <button className="text-btn" onClick={() => p.onFocus(s.id)}>{t('cell.observe')}</button>
         </div>
-        <div className="big"><Rolling value={s.energy} /><small>{t('cell.energyUnit')}</small></div>
-        {/* Your part of this node, always the same height: a bar of everything deposited here with
-            your part lit in gold, and the numbers on one line. Nothing appears or disappears. */}
+        <div className="big"><Rolling value={s.energy} /></div>
+        {/* Your part of this node, graphic only: gold = yours, dark = everyone else's, a small
+            slash where they meet. Always the same height. */}
         <ShareBar total={s.total} yours={s.claim} />
       </div>
 
@@ -137,11 +137,11 @@ export function NodeTab(p: DeepProps) {
       <div className="section-title">&nbsp;</div>
       <div className="group membrane">
         <Row k={t('cell.deposits')} v={`${fmtUsd(s.total)} USDC`} />
-        <Gate id="cell.generation" c={c}><Row k={t('cell.generation')} v={String(node?.depth ?? 0)} /></Gate>
         <Row k={t('cell.fee')} v={`${((node?.traits.feePpm ?? 0) / 1e4).toFixed(4)}%`} />
-        <Row k={t('cell.minimum')} v="1 USDC" />
-        {p.limits.maxDeposit > 0n && <Row k={t('cell.maximum')} v={`${fmtUsd(p.limits.maxDeposit)} USDC`} />}
-        {p.limits.eventFee > 0n && <Row k={t('cell.eventFee')} v={`${fmtUsd(p.limits.eventFee)} USDC`} />}
+        <Row k={t('cell.minimum')} v="1" />
+        {p.limits.maxDeposit > 0n && <Row k={t('cell.maximum')} v={fmtUsd(p.limits.maxDeposit)} />}
+        {p.limits.eventFee > 0n && <Row k={t('cell.eventFee')} v={fmtUsd(p.limits.eventFee)} />}
+        <Gate id="cell.generation" c={c}><Row k={t('cell.generation')} v={String(node?.depth ?? 0)} /></Gate>
       </div>
 
       <Gate id="cell.lineage" c={c}>
@@ -293,7 +293,7 @@ export function FeedTab(p: DeepProps) {
     .filter(e => see[e.kind])
     .filter(e => !('user' in e) || e.user.toLowerCase() !== me)
     .slice(0, 80)
-  if (!Object.values(see).some(Boolean)) return <Empty title={t('feed.locked')} text={t('feed.lockedHint')} />
+  if (!Object.values(see).some(Boolean)) return <Empty />
   if (!rows.length) return <Empty title={t('feed.empty')} text="" />
   return <FeedList p={p} rows={rows} />
 }
@@ -347,13 +347,12 @@ function Row({ k, v }: { k: string; v: string }) {
 /** Everything deposited in a node, with your part lit. Fixed height: never shifts the menu. */
 function ShareBar({ total, yours }: { total: bigint; yours: bigint }) {
   const pct = total > 0n ? Number((yours * 10_000n) / total) / 100 : 0
-  const w = yours > 0n ? Math.max(2, Math.min(100, pct)) : 0
+  const w = yours > 0n ? Math.max(1.5, Math.min(100, pct)) : 0
   return (
-    <div className="share">
-      <div className="share-track"><span className="share-fill" style={{ width: `${w}%` }} /></div>
-      <div className="share-row">
-        <span>{t('cell.yourShare')} <span className={yours > 0n ? 'gold num' : 'num'}>{fmtUsd(yours)}</span></span>
-        <span className="num">{yours > 0n ? `${pct < 0.01 ? '<0.01' : pct.toFixed(pct < 10 ? 2 : 1)}% ${t('cell.ofDeposits')}` : `${fmtUsd(total)} ${t('cell.depositedShort')}`}</span>
+    <div className="share" role="img" aria-label={`${pct.toFixed(1)}%`}>
+      <div className="share-track">
+        <span className="share-fill" style={{ width: `${w}%` }} />
+        {w > 0 && w < 100 && <span className="share-cut" style={{ left: `${w}%` }} />}
       </div>
     </div>
   )
@@ -368,11 +367,11 @@ function NodeGlyph() {
   )
 }
 
-function Empty({ title, text }: { title: string; text: string }) {
+function Empty({ title, text }: { title?: string; text?: string }) {
   return (
     <div className="empty">
       <NodeGlyph />
-      <div className="t">{title}</div>
+      {title && <div className="t">{title}</div>}
       {text && <div>{text}</div>}
     </div>
   )
