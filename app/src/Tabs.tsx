@@ -1,7 +1,7 @@
 // The four Deep tabs. Words come from reveal.ts (t), and every optional section asks shown()
 // first, so what a player sees can be gated by holdings, deposits, or mutations.
 import { useState, type ReactNode } from 'react'
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Inbox, Spline, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Spline, X } from 'lucide-react'
 import type { DeepProps } from './Deep'
 import { cleanAmount, fmtPct, fmtUsd, fromUnits, short, toUnits } from './format'
 import { shown, t, type Ctx, type InfoId } from './reveal'
@@ -48,6 +48,7 @@ export function NodeTab(p: DeepProps) {
   const tooSmall = units > 0n && units < 1_000_000n && !(out && units === s.claim)
   const tooBig = units > limit
   const overReason = out ? t('act.overClaim') : units > p.wallet ? t('act.overWallet') : p.limits.maxDeposit && units > p.limits.maxDeposit ? t('act.overDeposit') : t('act.overUser')
+  const reason = out && s.claim === 0n ? t('act.nothingHere') : tooSmall ? t('act.belowMin') : tooBig ? overReason : null
   const loansHere = p.links.filter(l => l.holder === s.id || l.lender === s.id)
   const now = Date.now() / 1000
   const amountOk = units > 0n && !tooSmall && !tooBig
@@ -81,20 +82,19 @@ export function NodeTab(p: DeepProps) {
         <span className="unit">USDC</span>
         {units > 0n && <button className="clear" aria-label={t('act.clear')} onClick={() => p.setAmount('')}><X size={14} strokeWidth={2.5} /></button>}
       </div>
-      {out && s.claim === 0n && <p className="hint">{t('act.nothingHere')}</p>}
-      {(tooSmall || tooBig) && <p className="hint-err">{tooSmall ? t('act.belowMin') : overReason}</p>}
       <div className="quick">
         {[10, 50, 100].map(v => <button key={v} className="cell-quiet" disabled={units >= limit} onClick={() => add(v)}>+{v}</button>)}
         <button className="cell-quiet" disabled={limit === 0n} aria-pressed={units === limit && limit > 0n} onClick={() => p.setAmount(fromUnits(limit))}>{t('act.max')}</button>
       </div>
       <div className="buttons">
+        {/* Messages live inside the button (fixed height), so the menu never changes size. */}
         {out ? (
-          <button className="btn cell-btn" disabled={!!p.busy || !amountOk} onClick={e => { pulse(e); p.onWithdraw(units) }}>
-            {p.busy === 'withdraw' ? t('act.withdrawing') : units > 0n ? `${t('act.withdraw')} ${fmtUsd(units)}` : t('act.withdraw')}
+          <button className={`btn cell-btn ${reason ? 'reason' : ''}`} disabled={!!p.busy || !amountOk} onClick={e => { pulse(e); p.onWithdraw(units) }}>
+            {p.busy === 'withdraw' ? t('act.withdrawing') : reason ?? (units > 0n ? `${t('act.withdraw')} ${fmtUsd(units)}` : t('act.withdraw'))}
           </button>
         ) : (
-          <button className="btn cell-btn" disabled={!!p.busy || !amountOk} onClick={e => { pulse(e); p.onDeposit() }}>
-            {p.busy === 'deposit' ? t('act.depositing') : units > 0n ? `${t('act.deposit')} ${fmtUsd(units)}` : t('act.deposit')}
+          <button className={`btn cell-btn ${reason ? 'reason' : ''}`} disabled={!!p.busy || !amountOk} onClick={e => { pulse(e); p.onDeposit() }}>
+            {p.busy === 'deposit' ? t('act.depositing') : reason ?? (units > 0n ? `${t('act.deposit')} ${fmtUsd(units)}` : t('act.deposit'))}
           </button>
         )}
       </div>
@@ -320,10 +320,19 @@ function Row({ k, v }: { k: string; v: string }) {
   )
 }
 
+/** An uncolored node: a soft glowing orb with a thin rim and a faint core, like the cells. */
+function NodeGlyph() {
+  return (
+    <span className="node-glyph" aria-hidden="true">
+      <span className="speck s1" /><span className="speck s2" />
+    </span>
+  )
+}
+
 function Empty({ title, text }: { title: string; text: string }) {
   return (
     <div className="empty">
-      <Inbox size={28} strokeWidth={1.75} style={{ color: 'var(--text-3)', marginBottom: 10 }} />
+      <NodeGlyph />
       <div className="t">{title}</div>
       {text && <div>{text}</div>}
     </div>

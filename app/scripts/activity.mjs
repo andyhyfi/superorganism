@@ -19,7 +19,7 @@ const MNEMONIC = 'test test test test test test test test test test test junk'
 const RPC = 'http://127.0.0.1:8545'
 const fast = process.env.PACE === 'fast'
 const GAP = fast ? [700, 2200] : [2500, 7000] // ms between actions
-const MAX_LIVE_NODES = 20 // Andy: about 20 nodes is the test size; activity only withdraws above it
+const MAX_LIVE_NODES = Number(process.env.MAX_CELLS || 80) // above this, activity only withdraws (Andy: the network will grow well past 20)
 
 const pub = createPublicClient({ chain: foundry, transport: http(RPC) })
 if ((await pub.getChainId()) !== 31337) throw new Error('activity.mjs runs on the local chain only')

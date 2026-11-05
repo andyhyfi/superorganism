@@ -135,4 +135,6 @@ button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent
 .dial input[type=range] { width: 100%; accent-color: var(--gold); }
 .dial-foot { display: flex; gap: 14px; margin-top: 2px; }
 .dial-foot .text-btn { font-size: 12px; }
-.mode-deep.narrow-sheet .dials, .mode-deep.narrow-sheet .dials-open { display: none; }
+@media (max-width: 720px) and (orientation: portrait) {
+  .mode-deep .dials, .mode-deep .dials-open { display: none; } /* the bottom sheet needs the space */
+}

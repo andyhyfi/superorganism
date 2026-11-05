@@ -86,7 +86,7 @@ export const INFO = {
   'act.clear': { label: 'Clear', rule: { always: true } },
   'act.overDeposit': { label: 'More than the 1,000 USDC deposit limit', rule: { always: true } },
   'act.overUser': { label: 'Over your 1,000 USDC total limit', rule: { always: true } },
-  'act.nothingHere': { label: 'You have nothing in this cell to withdraw.', rule: { always: true } },
+  'act.nothingHere': { label: 'Nothing to withdraw here', rule: { always: true } },
   'you.cell': { label: 'Cell', rule: { always: true } },
   'hud.wallet': { label: 'Wallet', rule: { always: true } },
   'hud.deposited': { label: 'Deposited', rule: { always: true } },
@@ -116,8 +116,8 @@ export const INFO = {
   'feed.empty': { label: 'Quiet for now', rule: { always: true } },
 
   // empty states
-  'empty.noCell': { label: 'No cell selected', rule: { always: true } },
-  'empty.noCellHint': { label: 'Tap a cell in the network to see it here.', rule: { always: true } },
+  'empty.noCell': { label: 'No node selected', rule: { always: true } },
+  'empty.noCellHint': { label: 'Tap a node in the network to see it here.', rule: { always: true } },
 } satisfies Record<string, Entry>
 
 export type InfoId = keyof typeof INFO

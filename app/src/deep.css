@@ -159,3 +159,25 @@ button.cell:active { background: var(--fill-2); }
 .chip { white-space: nowrap; }
 .group .cell .name + .meter { flex: 1; min-width: 24px; margin-left: 10px; }
 .group .cell .k.name { flex: 1; }
+
+/* the action button carries any message, at its usual size */
+.buttons .btn { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.buttons .btn.reason { font-size: 14px; font-weight: 500; color: var(--text-2); }
+
+/* empty-state icon: an uncolored node (soft glow, thin rim, faint core, two orbit specks) */
+.node-glyph {
+  position: relative; display: inline-block; width: 34px; height: 34px; border-radius: 50%; margin-bottom: 12px;
+  background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.14) 26%, rgba(255,255,255,0.05) 62%, rgba(255,255,255,0.0) 72%);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.32), 0 0 14px rgba(255,255,255,0.12), 0 0 4px rgba(255,255,255,0.18);
+  animation: glyph-breathe 4.5s ease-in-out infinite;
+}
+.node-glyph .speck {
+  position: absolute; top: 50%; left: 50%; width: 3px; height: 3px; margin: -1.5px; border-radius: 50%;
+  background: rgba(255,255,255,0.85); box-shadow: 0 0 4px rgba(255,255,255,0.6);
+  animation: glyph-orbit 14s linear infinite;
+}
+.node-glyph .s2 { animation-delay: -8s; opacity: 0.6; }
+@keyframes glyph-orbit { from { transform: rotate(0deg) translateX(17px); } to { transform: rotate(360deg) translateX(17px); } }
+@keyframes glyph-breathe { 0%, 100% { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.28), 0 0 12px rgba(255,255,255,0.1), 0 0 4px rgba(255,255,255,0.16); }
+  50% { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.38), 0 0 18px rgba(255,255,255,0.16), 0 0 5px rgba(255,255,255,0.22); } }
+@media (prefers-reduced-motion: reduce) { .node-glyph, .node-glyph .speck { animation: none; } }
