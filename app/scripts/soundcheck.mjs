@@ -42,13 +42,30 @@ try {
     return JSON.stringify(out);
   })()`)
   console.log(out)
-  // mute: a second real click must silence everything and stop the engine
-  await evalJs(`(() => { const c=document.querySelector('.controls'); c.classList.remove('hidden'); c.style.pointerEvents='auto'; return 1 })()`)
-  for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', clickCount: 1 })
-  await sleep(1500)
-  console.log(await evalJs(`(async () => {
-    const s=__sound;
-    s.recent=[]; s.play('split', 0, 3); // must not sound while muted
-    return JSON.stringify({ mute: { on: s.on, state: s.ctx?.state, gain: +s.out.gain.value.toFixed(4), saved: localStorage.getItem('evolution.sound'), btn: document.querySelector('.controls [aria-pressed]')?.getAttribute('aria-label') } })
-  })()`))
+  // consistency: button, choice and engine must agree after every switch
+  const click = async () => {
+    await evalJs(`(() => { const c=document.querySelector('.controls'); c.classList.remove('hidden'); c.style.pointerEvents='auto'; return 1 })()`)
+    for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', clickCount: 1 })
+  }
+  const state = () => evalJs(`JSON.stringify({ on: __sound.on, btn: document.querySelector('.controls [aria-pressed]')?.getAttribute('aria-pressed'), engine: __sound.ctx?.state, gain: +(__sound.out?.gain.value ?? 0).toFixed(3) })`)
+  const hide = async (hidden) => {
+    await send('Emulation.setFocusEmulationEnabled', { enabled: !hidden })
+    await evalJs(`(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => '${hidden ? 'hidden' : 'visible'}' }); document.dispatchEvent(new Event('visibilitychange')); ${hidden ? '' : "window.dispatchEvent(new Event('focus'));"} return 1 })()`)
+  }
+  const steps = []
+  const note = async label => { await sleep(1500); steps.push(label + ' ' + await state()) }
+  await note('start (on)')
+  await hide(true); await note('switched away (on)')
+  await hide(false); await note('back (on)')
+  await click(); await note('muted')
+  await hide(true); await note('switched away (muted)')
+  await hide(false); await note('back (muted)')
+  await click(); await note('unmuted')
+  // fast taps while the engine is mid-change: the last tap must win
+  await click(); await sleep(150); await click(); await sleep(150); await click(); await note('3 fast taps -> muted')
+  await hide(true); await sleep(200); await hide(false); await sleep(100); await click(); await note('switch + tap -> on')
+  // another tab changes the choice
+  await evalJs(`(() => { localStorage.setItem('evolution.sound','off'); window.dispatchEvent(new StorageEvent('storage', { key: 'evolution.sound', newValue: 'off' })); return 1 })()`)
+  await note('other tab muted')
+  for (const l of steps) console.log(l)
 } finally { ws?.close(); proc.kill() }

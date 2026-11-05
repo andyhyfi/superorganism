@@ -25,30 +25,107 @@ class Sound {
   out: GainNode | null = null
   private fx: GainNode | null = null
   recent: number[] = []
+  /** The user's choice, and the only on/off state. The button shows exactly this. */
   on = false
+  private listeners = new Set<() => void>()
+  private busy = false // a resume or suspend is in flight; reconcile runs again when it settles
+  private again = false
+  private fadeTimer = 0
+  private gestureArmed = false
 
   constructor() {
-    if (typeof document !== 'undefined') {
-      document.addEventListener('visibilitychange', () => this.applyVolume())
-    }
+    if (typeof window === 'undefined') return
+    this.on = this.saved
+    // switching tabs, windows, Spaces or apps: every way back to the page re-checks the engine
+    const check = () => this.reconcile()
+    document.addEventListener('visibilitychange', check)
+    window.addEventListener('focus', check)
+    window.addEventListener('pageshow', check)
+    // another tab or window changed the choice: follow it, so every copy agrees
+    window.addEventListener('storage', e => {
+      if (e.key !== KEY) return
+      const on = e.newValue === 'on'
+      if (on !== this.on) { this.on = on; this.emit(); this.reconcile() }
+    })
   }
 
-  /** The saved choice. The first tap after load starts audio if it was on. */
+  /** The saved choice. */
   get saved() {
     try { return localStorage.getItem(KEY) === 'on' } catch { return false }
   }
 
+  /** For React (useSyncExternalStore): the button re-renders whenever the choice changes. */
+  subscribe = (fn: () => void) => { this.listeners.add(fn); return () => { this.listeners.delete(fn) } }
+  snapshot = () => this.on
+  private emit() { for (const fn of this.listeners) fn() }
+
   setOn(on: boolean) {
     this.on = on
     try { localStorage.setItem(KEY, on ? 'on' : 'off') } catch { /* private mode */ }
-    if (on) this.start()
-    this.applyVolume()
+    this.emit()
+    if (on && !this.ctx) this.build() // inside the tap, so the browser lets audio start
+    this.reconcile()
   }
 
-  private start() {
-    if (this.ctx) { void this.ctx.resume(); return }
+  toggle() { this.setOn(!this.on) }
+
+  private get audible() {
+    return this.on && document.visibilityState === 'visible'
+  }
+
+  /**
+   * Brings the engine to match the choice. Serialized: a resume and a suspend never race (a late
+   * suspend landing after a resume used to leave the button on and the sound off). After each
+   * step settles it checks again, so the last state always wins.
+   */
+  private reconcile() {
+    const ctx = this.ctx
+    if (!ctx || !this.out) return
+    if (this.busy) { this.again = true; return }
+    const want = this.audible
+    const t = ctx.currentTime
+    window.clearTimeout(this.fadeTimer)
+    this.out.gain.cancelScheduledValues(t)
+    this.out.gain.setTargetAtTime(want ? SOUND.master : 0, t, want ? 0.8 : 0.12)
+    if (want && ctx.state !== 'running') {
+      this.run(ctx.resume().then(() => {
+        // the browser refused (no recent tap): resume on the next tap or key, anywhere
+        if (ctx.state !== 'running') this.armGesture()
+      }))
+    } else if (!want && ctx.state === 'running') {
+      // fade out first, then stop the engine (silent, no CPU)
+      this.fadeTimer = window.setTimeout(() => { if (!this.audible) this.run(ctx.suspend()) }, 600)
+    }
+  }
+
+  private run(p: Promise<unknown>) {
+    this.busy = true
+    p.catch(() => { /* reconcile retries */ }).finally(() => {
+      this.busy = false
+      if (this.again) { this.again = false }
+      this.reconcile() // always re-check: the state may have changed while this step ran
+    })
+  }
+
+  private armGesture() {
+    if (this.gestureArmed) return
+    this.gestureArmed = true
+    const go = () => {
+      window.removeEventListener('pointerdown', go, true)
+      window.removeEventListener('keydown', go, true)
+      this.gestureArmed = false
+      if (this.on && !this.ctx) this.build()
+      this.reconcile()
+    }
+    window.addEventListener('pointerdown', go, true)
+    window.addEventListener('keydown', go, true)
+  }
+
+  private build() {
     const ctx = new AudioContext()
     this.ctx = ctx
+    // Safari can interrupt audio (calls, other apps); when that ends, match the choice again
+    ctx.onstatechange = () => { if (ctx.state !== 'running' && this.audible && !this.busy) this.armGesture() }
     const out = ctx.createGain()
     out.gain.value = 0
     // a soft limiter so stacked effects never clip
@@ -72,28 +149,19 @@ class Sound {
     this.ambience(ctx, out, wet)
   }
 
-  private suspendTimer = 0
-
-  private applyVolume() {
-    const ctx = this.ctx
-    if (!ctx || !this.out) return
-    const audible = this.on && document.visibilityState === 'visible'
-    window.clearTimeout(this.suspendTimer)
-    if (audible && ctx.state === 'suspended') void ctx.resume()
-    const t = ctx.currentTime
-    this.out.gain.cancelScheduledValues(t)
-    this.out.gain.setTargetAtTime(audible ? SOUND.master : 0, t, audible ? 0.8 : 0.15)
-    // off: after the short fade, stop the audio engine completely (silent, no CPU)
-    if (!audible) this.suspendTimer = window.setTimeout(() => { if (!this.on || document.visibilityState !== 'visible') void ctx.suspend() }, 900)
+  /** A saved "on" from an earlier visit: start on the first tap or key (browsers require one). */
+  resumeSaved() {
+    if (this.on) this.armGesture()
   }
 
   /** Stops and releases the audio engine (used when the code reloads during development). */
   close() {
-    window.clearTimeout(this.suspendTimer)
+    window.clearTimeout(this.fadeTimer)
     void this.ctx?.close()
     this.ctx = null
     this.out = null
     this.fx = null
+    this.listeners.clear()
   }
 
   /** The bed: two slow detuned pads, a deep hum, and filtered noise like moving water. */
@@ -139,7 +207,7 @@ class Sound {
    * `seed` picks the note (a cell id), so each cell has its own voice.
    */
   play(kind: SoundKind, pan = 0, seed = 0, seed2 = 0) {
-    if (!this.on || !this.ctx || !this.fx || document.visibilityState !== 'visible') return
+    if (!this.audible || !this.ctx || !this.fx || this.ctx.state !== 'running') return
     const now = performance.now()
     this.recent = this.recent.filter(t => now - t < 1000)
     if (this.recent.length >= SOUND.maxPerSecond) return
@@ -275,9 +343,9 @@ export const sound = new Sound()
 // During development, editing this file loads a fresh copy. Close the old audio engine so it can
 // never keep playing out of reach of the mute button, and carry the on/off state across.
 if (import.meta.hot) {
-  if (import.meta.hot.data.wasOn) sound.setOn(true)
+  if (import.meta.hot.data.hadEngine) sound.resumeSaved()
   import.meta.hot.dispose(data => {
-    data.wasOn = sound.on
+    data.hadEngine = !!sound.ctx
     sound.close()
   })
 }

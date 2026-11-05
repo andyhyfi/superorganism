@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react'
 import {
   assertLocalChain, readNetwork, readEvents, claimOf, chancesAt, yourWallet, yourHeld, deposit, withdrawAmount,
   claimsOf, withdrawEverything, feesOwed, splitOdds, limits as readLimits, readDials, setDials,
@@ -36,15 +36,10 @@ export default function App() {
   const [block, setBlock] = useState(0n)
   const [sel, setSel] = useState<SelectedInfo | null>(null)
   const [claims, setClaims] = useState<Map<number, bigint>>(new Map())
-  // sound: remembered between visits; browsers start audio only after a tap, so a saved "on"
-  // resumes on the first tap anywhere
-  const [soundOn, setSoundOn] = useState(sound.saved)
-  useEffect(() => {
-    if (!sound.saved) return
-    const resume = () => { sound.setOn(true); window.removeEventListener('pointerdown', resume) }
-    window.addEventListener('pointerdown', resume)
-    return () => window.removeEventListener('pointerdown', resume)
-  }, [])
+  // sound: the engine holds the only on/off state; the button just shows it (stays right across
+  // tabs, windows and apps). A saved "on" starts on the first tap, as browsers require.
+  const soundOn = useSyncExternalStore(sound.subscribe, sound.snapshot)
+  useEffect(() => { sound.resumeSaved() }, [])
   const [fees, setFees] = useState(0n)
   const [odds, setOdds] = useState(0n)
   const [wallet, setWallet] = useState(0n)
@@ -340,7 +335,7 @@ export default function App() {
         <button aria-label="Zoom out" onClick={() => fieldRef.current?.zoomBy(0.8)}><Minus size={20} strokeWidth={2.25} /></button>
         <button aria-label="Fit network" onClick={() => fieldRef.current?.fitAll()}><Maximize2 size={18} strokeWidth={2.25} /></button>
         <button aria-label="Zoom in" onClick={() => fieldRef.current?.zoomBy(1.25)}><Plus size={20} strokeWidth={2.25} /></button>
-        <button aria-label={soundOn ? 'Sound off' : 'Sound on'} aria-pressed={soundOn} onClick={() => { sound.setOn(!soundOn); setSoundOn(!soundOn) }}>
+        <button aria-label={soundOn ? 'Sound off' : 'Sound on'} aria-pressed={soundOn} onClick={() => sound.toggle()}>
           {soundOn ? <Volume2 size={19} strokeWidth={2.25} /> : <VolumeX size={19} strokeWidth={2.25} />}
         </button>
         <span className="divider" />
