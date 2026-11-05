@@ -26,6 +26,7 @@ const WATER = {
   emptyBand: 90, // how wide the waiting ring is; its outer edge is the outer boundary
   splitPush: 70, // how hard the two halves of a split push apart (they glide off, then the water slows them)
   shove: 9, // how much momentum a dividing cell gives the neighbors it pushes aside
+  escape: 4, // speed per unit of overlap a squeezed cell gets, so contact always beats the inward pull
 }
 
 // The galaxy swirl: the whole network turns slowly clockwise around the center and is drawn
@@ -77,6 +78,7 @@ type VNode = {
   hue: number
   sp: number // species (look); placeholder: from lineage, later from mutations
   lit: number // 0..1, the selection light
+  squeezed?: boolean // overlapping at the end of the last step: its inward pull eases until it is free
   dim: number // 0..1, how far the cell has gone dark (empty cells)
   variant: number
   phase: number; spin: number
@@ -434,7 +436,8 @@ export class Field {
         const turn = SWIRL.spin * Math.min(1, d / rest)
         // every live cell is drawn toward the center, so they bundle and press on each other
         // a cell that just came back to life (deposit or borrowed energy) eases in as it brightens
-        const inward = n.total > EMPTY ? SWIRL.pull * Math.min(1, d / SWIRL.core) * (1 - 0.85 * n.dim) : 0
+        // a squeezed cell (overlapping last frame) stops pulling inward until it is free
+        const inward = n.total > EMPTY ? SWIRL.pull * Math.min(1, d / SWIRL.core) * (1 - 0.85 * n.dim) * (n.squeezed ? 0.2 : 1) : 0
         const out = SWIRL.pulsePush * this.pulse * Math.min(1, d / 80 + 0.3)
         wx += -uy * turn + ux * (out - inward)
         wy += ux * turn + uy * (out - inward)
@@ -445,7 +448,7 @@ export class Field {
         const inner = rest + WATER.emptyGap, outer = inner + WATER.emptyBand
         const want = d < inner ? inner - d : d > outer ? outer - d : 0
         // inside the cluster it works its way out faster (live cells shoulder it aside)
-        const k = d < rest ? 2.5 : Math.max(-1, Math.min(1, want / 40))
+        const k = d < rest ? 4 : Math.max(-1, Math.min(1, want / 40))
         wx += ux * WATER.emptyDrift * k; wy += uy * WATER.emptyDrift * k
       }
       const settle = 1 - Math.exp(-dt * WATER.drag * Math.min(3, WATER.dragSize / Math.max(n.r, 6)))
@@ -464,6 +467,7 @@ export class Field {
     this.dishR = !this.dishR || want > this.dishR ? want : this.dishR + (want - this.dishR) * Math.min(1, dt * 0.2)
 
     // cells never overlap: push apart, then bounce (a few passes settle crowded spots)
+    for (const n of list) n.squeezed = false
     for (let pass = 0; pass < 4; pass++) {
       for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
         const a = list[i], b = list[j]
@@ -472,17 +476,24 @@ export class Field {
         if (d < 1e-6) { dx = 1; dy = 0; d = 1e-6 }
         const min = this.reach(a) + this.reach(b) + WATER.gap
         if (d >= min) continue
-        // an empty husk still inside the cluster slips out between live cells instead of being trapped
-        if ((a.total <= EMPTY && Math.hypot(a.x, a.y) < this.clusterR * 0.9) ||
-            (b.total <= EMPTY && Math.hypot(b.x, b.y) < this.clusterR * 0.9)) continue
         const ux = dx / d, uy = dy / d
         // mass grows with area, so a big cell shoves a small one far and barely moves itself
-        // an empty cell is light (a husk): live cells push it aside easily
-        const ma = a.r * a.r * (a.total <= EMPTY ? 0.15 : 1), mb = b.r * b.r * (b.total <= EMPTY ? 0.15 : 1)
+        // an empty cell (a husk) is light at the ring, so live cells push it aside easily. Inside the
+        // cluster it is heavy instead: live cells flow around it while it rises out, like a bubble
+        const husk = (n: VNode) => n.total <= EMPTY ? (Math.hypot(n.x, n.y) < this.clusterR * 0.95 ? 6 : 0.15) : 1
+        const ma = a.r * a.r * husk(a), mb = b.r * b.r * husk(b)
         const wa = mb / (ma + mb), wb = ma / (ma + mb)
         const over = min - d
+        if (pass === 3 && over > 1) { a.squeezed = true; b.squeezed = true }
         a.x -= ux * over * wa; a.y -= uy * over * wa
         b.x += ux * over * wb; b.y += uy * over * wb
+        // contact always beats the inward pull: the pushed cell gets an outward speed larger than
+        // the pull, so a small cell squeezed between big ones escapes instead of sticking
+        if (pass === 0) {
+          const esc = Math.min(over, 12) * WATER.escape
+          a.vx -= ux * esc * wa; a.vy -= uy * esc * wa
+          b.vx += ux * esc * wb; b.vy += uy * esc * wb
+        }
         if (a.splitting || b.splitting) {
           // a dividing cell shoves its neighbors: they glide away with momentum, small ones further
           const k = WATER.shove
