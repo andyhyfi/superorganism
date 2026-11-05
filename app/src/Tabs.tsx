@@ -15,7 +15,7 @@ export function playerCtx(p: DeepProps, heldHere = 0n): Ctx {
   const me = p.you.toLowerCase()
   const heldTotal = [...p.claims.values()].reduce((a, c) => a + c, 0n)
   const deposits = p.feed.filter(e => e.kind === 'deposit' && e.user.toLowerCase() === me).length
-  return { heldHere: usdNum(heldHere), heldTotal: usdNum(heldTotal), deposits, traits: [] }
+  return { heldHere: usdNum(heldHere), heldTotal: usdNum(heldTotal), deposits, deposited: usdNum(p.netDeposited), traits: [] }
 }
 
 /** Renders children only when the rule for `id` passes. */
@@ -224,6 +224,8 @@ export function NetworkTab(p: DeepProps) {
 export function YoursTab(p: DeepProps) {
   const held = [...p.claims.entries()].filter(([, c]) => c > 0n).sort((a, b) => Number(b[1] - a[1]))
   const sum = held.reduce((a, [, c]) => a + c, 0n)
+  const me = p.you.toLowerCase()
+  const mine = p.feed.filter(e => (e.kind === 'deposit' || e.kind === 'withdraw') && e.user.toLowerCase() === me).slice(0, 80)
   return (
     <>
       <div className="hero">
@@ -231,9 +233,9 @@ export function YoursTab(p: DeepProps) {
         <div className="big"><Rolling value={sum} /><small>USDC</small></div>
         <div className="meta">{fmtUsd(p.wallet)} USDC {t('you.wallet')}</div>
       </div>
-      {!held.length ? (
+      {!held.length && !mine.length ? (
         <Empty title={t('you.empty')} text={t('you.emptyHint')} />
-      ) : (
+      ) : !held.length ? null : (
         <>
           <div className="group membrane">
             {held.map(([id, c]) => (
@@ -250,6 +252,12 @@ export function YoursTab(p: DeepProps) {
               {p.busy === 'withdrawAll' ? t('act.withdrawing') : t('act.withdrawAll')}
             </button>
           </div>
+        </>
+      )}
+      {mine.length > 0 && (
+        <>
+          <div className="section-title">{t('you.activity')}</div>
+          <FeedList p={p} rows={mine} />
         </>
       )}
     </>
@@ -273,21 +281,36 @@ export function Orb({ colors, size = 22 }: { id?: number; colors?: { dark: strin
 export function FeedTab(p: DeepProps) {
   const c = playerCtx(p)
   const me = p.you.toLowerCase()
-  const others = shown('feed.others', c)
+  const see = {
+    deposit: shown('net.seeDeposits', c),
+    withdraw: shown('net.seeWithdrawals', c),
+    split: shown('net.seeSplits', c),
+    loan: shown('net.seeLoans', c),
+    repay: shown('net.seeLoans', c),
+  }
+  // other players only: your own rows live on the Yours tab
   const rows = p.feed
-    .filter(e => e.kind !== 'repay')
-    .filter(e => others || ((e.kind === 'deposit' || e.kind === 'withdraw') && e.user.toLowerCase() === me))
+    .filter(e => see[e.kind])
+    .filter(e => !('user' in e) || e.user.toLowerCase() !== me)
     .slice(0, 80)
+  if (!Object.values(see).some(Boolean)) return <Empty title={t('feed.locked')} text={t('feed.lockedHint')} />
   if (!rows.length) return <Empty title={t('feed.empty')} text="" />
+  return <FeedList p={p} rows={rows} />
+}
+
+/** One list of events; shared by the Activity tab (network) and the Yours tab (your own). */
+function FeedList({ p, rows }: { p: DeepProps; rows: DeepProps['feed'] }) {
+  const me = p.you.toLowerCase()
   return (
     <div className="group membrane" style={{ marginTop: 8 }}>
       {rows.map(e => {
-        if (e.kind === 'loan') {
+        if (e.kind === 'loan' || e.kind === 'repay') {
+          const to = e.kind === 'loan' ? e.borrower : e.lender
           return (
-            <button key={e.key} className="cell" onClick={() => !p.nodes[e.borrower]?.split && p.onSelect(e.borrower)}>
+            <button key={e.key} className="cell" onClick={() => !p.nodes[to]?.split && p.onSelect(to)}>
               <span className="badge split"><Spline size={16} strokeWidth={2.25} /></span>
-              <span className="k">{t('feed.loan')}<span className="sub">{`${nameOf(e.lender)} → ${nameOf(e.borrower)}`}</span></span>
-              <span className="v">{fmtUsd(e.amount)}</span>
+              <span className="k">{e.kind === 'loan' ? t('feed.loan') : t('feed.repay')}<span className="sub">{e.kind === 'loan' ? `${nameOf(e.lender)} → ${nameOf(e.borrower)}` : `→ ${nameOf(e.lender)}`}</span></span>
+              {e.kind === 'loan' && <span className="v">{fmtUsd(e.amount)}</span>}
             </button>
           )
         }

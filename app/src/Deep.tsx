@@ -7,7 +7,7 @@ import type { ChainNode, LoanLink, NetEvent } from './chain'
 import { NodeTab, NetworkTab, YoursTab, FeedTab } from './Tabs'
 import { attachSheetDrag } from './sheetDrag'
 import { useEffect, useRef } from 'react'
-import { t } from './reveal'
+import { t, networkActivityExists } from './reveal'
 import './deep.css'
 import './cell.css'
 
@@ -44,14 +44,15 @@ export type DeepProps = {
   links: LoanLink[]
   limits: { maxDeposit: bigint; maxPerUser: bigint; eventFee: bigint }
   heldNet: bigint
+  netDeposited: bigint
 }
 
-const TABS: { id: Tab; label: string }[] = [
+const TABS = ([
   { id: 'node', label: t('tab.node') },
   { id: 'network', label: t('tab.network') },
   { id: 'yours', label: t('tab.yours') },
   { id: 'feed', label: t('tab.activity') },
-]
+] as { id: Tab; label: string }[]).filter(x => x.id !== 'feed' || networkActivityExists()) // no network activity at all: no tab
 
 export function Deep(p: DeepProps) {
   const ref = useRef<HTMLElement>(null)
@@ -84,7 +85,7 @@ export function Deep(p: DeepProps) {
         {p.tab === 'node' && <NodeTab {...p} />}
         {p.tab === 'network' && <NetworkTab {...p} />}
         {p.tab === 'yours' && <YoursTab {...p} />}
-        {p.tab === 'feed' && <FeedTab {...p} />}
+        {p.tab === 'feed' && networkActivityExists() && <FeedTab {...p} />}
       </div>
     </aside>
   )

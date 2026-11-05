@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react'
 import {
-  assertLocalChain, readNetwork, readEvents, claimOf, chancesAt, yourWallet, yourHeld, deposit, withdrawAmount,
+  assertLocalChain, readNetwork, readEvents, claimOf, chancesAt, yourWallet, yourHeld, yourNetDeposited, deposit, withdrawAmount,
   claimsOf, withdrawEverything, feesOwed, splitOdds, limits as readLimits, readDials, setDials,
   publicClient, you, PRESET, type ChainNode, type NetEvent, type LoanLink, type Dials,
 } from './chain'
@@ -44,6 +44,7 @@ export default function App() {
   const [odds, setOdds] = useState(0n)
   const [wallet, setWallet] = useState(0n)
   const [heldNet, setHeldNet] = useState(0n)
+  const [netDeposited, setNetDeposited] = useState(0n) // deposits minus withdrawals: gates network activity
   const [lim, setLim] = useState({ maxDeposit: 0n, maxPerUser: 0n, eventFee: 0n })
   const [links, setLinks] = useState<LoanLink[]>([])
   const [dials, setDialsState] = useState<Dials>({ splitPpm: 0, eventPpm: 0 })
@@ -60,11 +61,12 @@ export default function App() {
 
   const refreshMine = async (all: ChainNode[]) => {
     const live = all.filter(n => !n.split && !n.gone).map(n => n.id)
-    const [c, f, w, h] = await Promise.all([claimsOf(live), feesOwed(), yourWallet(), yourHeld()])
+    const [c, f, w, h, nd] = await Promise.all([claimsOf(live), feesOwed(), yourWallet(), yourHeld(), yourNetDeposited()])
     setClaims(new Map(live.map((id, i) => [id, c[i]])))
     setFees(f)
     setWallet(w)
     setHeldNet(h)
+    setNetDeposited(nd)
   }
 
   // ------------------------------------------------------------ selection
@@ -349,7 +351,7 @@ export default function App() {
           tab={tab} setTab={setTab} sheet={sheet} setSheet={setSheet} narrow={narrow}
           nodes={nodes} feed={feed} you={you.address} selected={sel} claims={claims}
           fees={fees} odds={odds} wallet={wallet} busy={busy} amount={amount} setAmount={setAmount}
-          links={links} limits={lim} heldNet={heldNet}
+          links={links} limits={lim} heldNet={heldNet} netDeposited={netDeposited}
           onSelect={id => { select(id); fieldRef.current?.focus(id) }}
           onFocus={id => fieldRef.current?.focus(id)}
           onDeposit={() => sel && act('deposit', () => deposit(sel.id, units))}

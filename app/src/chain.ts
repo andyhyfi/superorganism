@@ -190,6 +190,20 @@ export async function setDials(d: Dials) {
   await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'setDemoDials', args: [d.splitPpm, d.eventPpm] }))
 }
 
+/**
+ * USDC you deposited minus USDC you withdrew, over all time (before fees), from your own
+ * Deposited and Withdrawn logs (the user topic is indexed, so this reads only your events).
+ */
+export async function yourNetDeposited(): Promise<bigint> {
+  const [d, w] = await Promise.all([
+    publicClient.getContractEvents({ address: EVOLUTION, abi: evolutionAbi, eventName: 'Deposited', args: { user: you.address }, fromBlock: 0n }),
+    publicClient.getContractEvents({ address: EVOLUTION, abi: evolutionAbi, eventName: 'Withdrawn', args: { user: you.address }, fromBlock: 0n }),
+  ])
+  const sum = (xs: readonly { args: unknown }[]) => xs.reduce((a, l) => a + ((l.args as { amount?: bigint }).amount ?? 0n), 0n)
+  const net = sum(d) - sum(w)
+  return net > 0n ? net : 0n
+}
+
 export async function yourWallet(): Promise<bigint> {
   return publicClient.readContract({ address: USDC, abi: usdcAbi, functionName: 'balanceOf', args: [you.address] })
 }

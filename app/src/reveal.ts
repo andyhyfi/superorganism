@@ -11,6 +11,7 @@
 //   { heldHere: n }                   player holds at least n USDC in this cell
 //   { heldTotal: n }                  player holds at least n USDC across the network
 //   { deposits: n }                   player has made at least n deposits
+//   { deposited: n }                  player's USDC deposited minus withdrawn is at least n (fees not subtracted)
 //   { trait: 'name' }                 the cell carries a mutation (none exist yet, so hidden)
 //   { any: [rules] } / { all: [rules] }
 //
@@ -22,6 +23,7 @@ export type Rule =
   | { heldHere: number }
   | { heldTotal: number }
   | { deposits: number }
+  | { deposited: number }
   | { trait: string }
   | { any: Rule[] }
   | { all: Rule[] }
@@ -30,10 +32,40 @@ export type Ctx = {
   heldHere: number // USDC the player holds in the cell being viewed
   heldTotal: number // USDC the player holds across the network
   deposits: number // deposits the player has made
+  deposited: number // USDC the player deposited minus USDC withdrawn (before fees)
   traits: string[] // mutations on the cell being viewed
 }
 
 type Entry = { label: string; rule: Rule; note?: string }
+
+/**
+ * Network activity (Activity tab). Every value here is a setting, safe to change at any time.
+ *   visible  master switch. false hides ALL network activity from everyone (launch plan, Andy
+ *            2026-11-05); the Activity tab then disappears. Your own activity stays on Yours.
+ *   levels   USDC a player must have deposited (deposits minus withdrawals, before fees) to see
+ *            each kind of other players' activity. 0 = everyone; Infinity = no one.
+ *            Withdrawing below a level hides that kind again.
+ * This is game design, not privacy: every event is public on the chain for anyone who reads it.
+ */
+export const NETWORK_ACTIVITY = {
+  visible: true, // set false for launch (Andy, 2026-11-05)
+  levels: {
+    deposits: 100,
+    withdrawals: 500,
+    loans: 1000, // loans and energy returns
+    splits: 100, // also visible in the field, so kept with deposits
+  },
+}
+
+function networkRule(kind: keyof typeof NETWORK_ACTIVITY.levels): Rule {
+  if (!NETWORK_ACTIVITY.visible) return { never: true }
+  const n = NETWORK_ACTIVITY.levels[kind]
+  return Number.isFinite(n) ? { deposited: n } : { never: true }
+}
+
+/** True when the Activity tab has anything it could ever show (false at launch). */
+export const networkActivityExists = () =>
+  NETWORK_ACTIVITY.visible && Object.values(NETWORK_ACTIVITY.levels).some(n => Number.isFinite(n))
 
 export const INFO = {
   // tabs
@@ -114,8 +146,20 @@ export const INFO = {
   'feed.withdraw': { label: 'Withdrawal', rule: { always: true } },
   'feed.split': { label: 'Divided', rule: { always: true } },
   'feed.loan': { label: 'Energy lent', rule: { always: true } },
-  'feed.others': { label: 'Other players', rule: { deposits: 1 }, note: 'before a first deposit, only your own rows show' },
+  'feed.repay': { label: 'Energy returned', rule: { always: true } },
   'feed.empty': { label: 'Quiet for now', rule: { always: true } },
+  'feed.locked': { label: 'Network activity is hidden', rule: { always: true } },
+  'feed.lockedHint': { label: 'Deposit more to see what other players do.', rule: { always: true } },
+
+  // Activity tab: what other players do. Each kind unlocks at its own level (USDC deposited). Levels and the master switch live in NETWORK_ACTIVITY below.
+  'net.seeDeposits': { label: 'Network deposits', rule: networkRule('deposits') },
+  'net.seeWithdrawals': { label: 'Network withdrawals', rule: networkRule('withdrawals') },
+  'net.seeSplits': { label: 'Network splits', rule: networkRule('splits') },
+  'net.seeLoans': { label: 'Network loans and returns', rule: networkRule('loans') },
+
+  // Yours tab: your own history
+  'you.activity': { label: 'Your activity', rule: { always: true } },
+  'you.noActivity': { label: 'No activity yet', rule: { always: true } },
 
   // empty states
   'empty.noCell': { label: 'No node selected', rule: { always: true } },
@@ -134,6 +178,7 @@ function passes(rule: Rule, c: Ctx): boolean {
   if ('heldHere' in rule) return c.heldHere >= rule.heldHere
   if ('heldTotal' in rule) return c.heldTotal >= rule.heldTotal
   if ('deposits' in rule) return c.deposits >= rule.deposits
+  if ('deposited' in rule) return c.deposited >= rule.deposited
   if ('trait' in rule) return rule.trait === 'any' ? c.traits.length > 0 : c.traits.includes(rule.trait)
   if ('any' in rule) return rule.any.some(r => passes(r, c))
   if ('all' in rule) return rule.all.every(r => passes(r, c))
