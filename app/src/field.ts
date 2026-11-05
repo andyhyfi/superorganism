@@ -21,7 +21,9 @@ const WATER = {
   bounce: 0.55, // how springy a bump is (0 = stops dead, 1 = perfect bounce)
   gap: 3, // space kept between membranes
   room: 1.5, // dish size relative to the cells it holds (bigger = more open water)
-  emptyDrift: 9, // how fast an emptied cell drifts outward (px/s)
+  emptyDrift: 9, // how fast an empty cell drifts to its waiting ring (world units per second)
+  emptyGap: 100, // open water between the main cluster's edge and the ring where empty cells wait
+  emptyBand: 90, // how wide the waiting ring is; its outer edge is the outer boundary
   splitPush: 70, // how hard the two halves of a split push apart (they glide off, then the water slows them)
   shove: 9, // how much momentum a dividing cell gives the neighbors it pushes aside
 }
@@ -392,7 +394,8 @@ export class Field {
   }
 
   private dishR = 0
-  private view = { x: 0, y: 0, hw: 0, hh: 0 } // the overview frame in world units
+  private outerR = 0 // the outer boundary: empty cells wait inside it
+  private clusterR = 0 // the main cluster's size
   private fit = { z: 1, cx: 0, cy: 0 }
 
   /** How far a cell reaches from its center (a dividing cell is stretched along its axis). */
@@ -413,6 +416,9 @@ export class Field {
     let packed = 0
     for (const n of this.nodes.values()) if (n.total > EMPTY) packed += (this.reach(n) + WATER.gap) ** 2
     const rest = Math.max(60, Math.sqrt(packed))
+    this.clusterR = rest
+    const outerWant = rest + WATER.emptyGap + WATER.emptyBand + 20
+    this.outerR = !this.outerR ? outerWant : this.outerR + (outerWant - this.outerR) * Math.min(1, dt * 0.3)
     for (const n of this.nodes.values()) {
       if (!n.splitting) n.r += (radiusOf(n.total) - n.r) * Math.min(1, dt * 1.5)
       n.alpha += (1 - n.alpha) * Math.min(1, dt * 1.2)
@@ -427,18 +433,19 @@ export class Field {
         const d = Math.hypot(n.x, n.y) || 1e-6, ux = n.x / d, uy = n.y / d
         const turn = SWIRL.spin * Math.min(1, d / rest)
         // every live cell is drawn toward the center, so they bundle and press on each other
-        const inward = n.total > EMPTY ? SWIRL.pull * Math.min(1, d / SWIRL.core) : 0
+        // a cell that just came back to life (deposit or borrowed energy) eases in as it brightens
+        const inward = n.total > EMPTY ? SWIRL.pull * Math.min(1, d / SWIRL.core) * (1 - 0.85 * n.dim) : 0
         const out = SWIRL.pulsePush * this.pulse * Math.min(1, d / 80 + 0.3)
         wx += -uy * turn + ux * (out - inward)
         wy += ux * turn + uy * (out - inward)
       }
-      if (n.dim > 0.05 && this.view.hw) {
-        // empty: drifts slowly outward until it rests just inside the edge of the screen
-        const dx = n.x - this.view.x, dy = n.y - this.view.y, d = Math.hypot(dx, dy) || 1
-        const ux = dx / d, uy = dy / d
-        const s = 1 / Math.max(Math.abs(ux) / this.view.hw, Math.abs(uy) / this.view.hh) // distance to the frame edge
-        const rest = Math.max(0, s * 0.96 - n.r)
-        const k = Math.max(0, Math.min(1, (rest - d) / 60)) * n.dim
+      if (n.total <= EMPTY) {
+        // empty: drifts to the waiting ring around the main cluster and circles there with the swirl
+        const d = Math.hypot(n.x, n.y) || 1e-6, ux = n.x / d, uy = n.y / d
+        const inner = rest + WATER.emptyGap, outer = inner + WATER.emptyBand
+        const want = d < inner ? inner - d : d > outer ? outer - d : 0
+        // inside the cluster it works its way out faster (live cells shoulder it aside)
+        const k = d < rest ? 2.5 : Math.max(-1, Math.min(1, want / 40))
         wx += ux * WATER.emptyDrift * k; wy += uy * WATER.emptyDrift * k
       }
       const settle = 1 - Math.exp(-dt * WATER.drag * Math.min(3, WATER.dragSize / Math.max(n.r, 6)))
@@ -465,9 +472,14 @@ export class Field {
         if (d < 1e-6) { dx = 1; dy = 0; d = 1e-6 }
         const min = this.reach(a) + this.reach(b) + WATER.gap
         if (d >= min) continue
+        // an empty husk still inside the cluster slips out between live cells instead of being trapped
+        if ((a.total <= EMPTY && Math.hypot(a.x, a.y) < this.clusterR * 0.9) ||
+            (b.total <= EMPTY && Math.hypot(b.x, b.y) < this.clusterR * 0.9)) continue
         const ux = dx / d, uy = dy / d
         // mass grows with area, so a big cell shoves a small one far and barely moves itself
-        const ma = a.r * a.r, mb = b.r * b.r, wa = mb / (ma + mb), wb = ma / (ma + mb)
+        // an empty cell is light (a husk): live cells push it aside easily
+        const ma = a.r * a.r * (a.total <= EMPTY ? 0.15 : 1), mb = b.r * b.r * (b.total <= EMPTY ? 0.15 : 1)
+        const wa = mb / (ma + mb), wb = ma / (ma + mb)
         const over = min - d
         a.x -= ux * over * wa; a.y -= uy * over * wa
         b.x += ux * over * wb; b.y += uy * over * wb
@@ -487,8 +499,8 @@ export class Field {
       // the dish wall
       for (const n of list) {
         const d = Math.hypot(n.x, n.y) || 1e-6
-        // live cells stay inside the dish; empty ones may sit out in the band beyond it
-        const lim = Math.max(this.dishR, n.total <= EMPTY ? Math.hypot(this.view.hw, this.view.hh) : 0) - this.reach(n)
+        // live cells stay inside the dish; empty ones stay inside the outer boundary
+        const lim = Math.max(this.dishR, n.total <= EMPTY ? this.outerR : 0) - this.reach(n)
         if (d <= lim) continue
         const ux = n.x / d, uy = n.y / d
         n.x = ux * Math.max(0, lim); n.y = uy * Math.max(0, lim)
@@ -522,9 +534,8 @@ export class Field {
     {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
     // frame the live cells; empty ones are left to drift out at the edges
-    const hasLive = [...this.nodes.values()].some(n => n.total > EMPTY)
+    // the overview frames every cell: the main cluster and the empty cells waiting on the ring
     for (const n of this.nodes.values()) {
-      if (hasLive && n.total <= EMPTY) continue
       const pad = n.r * 1.6
       x0 = Math.min(x0, n.x - pad); y0 = Math.min(y0, n.y - pad)
       x1 = Math.max(x1, n.x + pad); y1 = Math.max(y1, n.y + pad)
@@ -532,7 +543,6 @@ export class Field {
     const margin = 0.82
     const z = Math.min(1.6, (vw * margin) / (x1 - x0), (vh * margin) / (y1 - y0))
     this.fit = { z, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }
-    this.view = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, hw: vw / 2 / z, hh: vh / 2 / z }
     }
     if (this.camMode === 'manual' && this.autoReturnMs != null && performance.now() - this.lastInput > this.autoReturnMs) {
       this.camMode = 'auto'
