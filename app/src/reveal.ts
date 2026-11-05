@@ -68,6 +68,8 @@ export const INFO = {
   'act.withdrawing': { label: 'Withdrawing…', rule: { always: true } },
   'act.withdrawAll': { label: 'Withdraw all', rule: { always: true } },
   'act.max': { label: 'Max', rule: { always: true } },
+  'act.belowMin': { label: 'Minimum is 1 USDC', rule: { always: true } },
+  'act.overWallet': { label: 'More than your wallet holds', rule: { always: true } },
 
   // the network
   'net.held': { label: 'Held across the network', rule: { always: true } },

@@ -7,7 +7,7 @@ import {
 import { Field } from './field'
 import { attachGestures } from './gestures'
 import { Deep, type Tab, type Sheet, type SelectedInfo } from './Deep'
-import { fmtUsd } from './format'
+import { fmtUsd, toUnits } from './format'
 import { Plus, Minus, Maximize2, LayoutList, Waves } from 'lucide-react'
 import { installCellTexture } from './cellTexture'
 import { isRevealAll, setRevealAll } from './reveal'
@@ -17,8 +17,9 @@ import './cell.css'
 installCellTexture()
 
 type Mode = 'aquarium' | 'deep'
-const NARROW = '(max-width: 720px)'
-const SIDE_W = 360
+// Bottom sheet only on narrow screens held upright; a phone held sideways gets the side panel.
+const NARROW = '(max-width: 720px) and (orientation: portrait)'
+const sideW = () => (window.innerWidth < 800 ? 300 : 360) // keep in step with --side in app.css
 const SHEET_H: Record<Sheet, number> = { peek: 0.22, half: 0.52, full: 0.92 }
 
 export default function App() {
@@ -176,7 +177,7 @@ export default function App() {
     if (!field) return
     if (mode === 'aquarium') field.setInset(0, 0)
     else if (narrow) field.setInset(0, Math.round(window.innerHeight * SHEET_H[sheet]))
-    else field.setInset(SIDE_W + 16, 0)
+    else field.setInset(sideW() + 16, 0)
     field.setAutoReturn(mode === 'aquarium' ? 15000 : null)
   }, [mode, narrow, sheet])
 
@@ -223,13 +224,13 @@ export default function App() {
       await refreshMine(nodesRef.current)
       if (sel) await refreshSelected(sel.id)
     } catch (e) {
-      setError(e instanceof Error ? e.message.split('\n')[0] : String(e))
+      setError(friendly(e))
       setTimeout(() => setError(null), 5000)
     } finally {
       setBusy(null)
     }
   }
-  const units = (() => { const n = Number(amount); return Number.isFinite(n) && n > 0 ? BigInt(Math.round(n * 1e6)) : 0n })()
+  const units = toUnits(amount)
   const heldIds = [...claims.entries()].filter(([, c]) => c > 0n).map(([id]) => id)
 
   // ---------------------------------------------------------------- view
@@ -285,6 +286,16 @@ export default function App() {
       {error && <div className="toast">{error}</div>}
     </div>
   )
+}
+
+/** Turns a chain or wallet error into one plain sentence (placeholder copy). */
+function friendly(e: unknown): string {
+  const m = e instanceof Error ? e.message : String(e)
+  if (/HTTP request failed|fetch|network|Failed to fetch|timed? ?out/i.test(m)) return 'Connection lost. Nothing was sent. Try again in a moment.'
+  if (/insufficient|exceeds balance/i.test(m)) return 'Not enough USDC in your wallet.'
+  if (/rejected|denied/i.test(m)) return 'Cancelled.'
+  if (/revert/i.test(m)) return 'The network refused this. Nothing was sent.'
+  return m.split('\n')[0].slice(0, 120)
 }
 
 /** Plays chain history into the field instantly, in the order it happened. */

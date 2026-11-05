@@ -131,3 +131,11 @@ button.cell:active { background: var(--fill-2); }
 .badge.in { background: rgba(106, 168, 255, 0.18); color: var(--accent); }
 .badge.out { background: rgba(255, 255, 255, 0.1); color: var(--text-2); }
 .badge.split { background: rgba(255, 204, 92, 0.18); color: var(--gold); }
+
+/* touch: tabs and close reach a comfortable target size */
+@media (pointer: coarse) {
+  .segmented button { height: 36px; }
+  .close { width: 40px; height: 40px; }
+}
+
+.hint-err { margin: 8px 0 0 16px; font-size: 13px; color: #ff9f8a; }

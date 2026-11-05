@@ -122,6 +122,10 @@ export class Painter {
       const cv = this.app.canvas as HTMLCanvasElement
       cv.style.display = 'block'; cv.style.width = '100%'; cv.style.height = '100%'
       host.appendChild(cv)
+      // PixiJS adds an invisible off-screen button on phones for its own accessibility layer.
+      // The field has no Pixi-level content to expose (the panels are real HTML), so drop it.
+      const a11y = (this.app.renderer as unknown as { accessibility?: { _destroyTouchHook?: () => void } }).accessibility
+      a11y?._destroyTouchHook?.()
       this.tex = {
         dot: bakeDot(), glow: bakeGlow(), bg: bakeBackground(), body: new Map(),
         spiral: Array.from({ length: SPIRAL_LEVELS }, (_, i) => bakeSpiral(0.5 + (i / (SPIRAL_LEVELS - 1)) * 3.2)),

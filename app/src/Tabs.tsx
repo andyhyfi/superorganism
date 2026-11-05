@@ -3,7 +3,7 @@
 import { useState, type ReactNode } from 'react'
 import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Inbox } from 'lucide-react'
 import type { DeepProps } from './Deep'
-import { fmtPct, fmtUsd, short } from './format'
+import { cleanAmount, fmtPct, fmtUsd, short, toUnits } from './format'
 import { shown, t, type Ctx, type InfoId } from './reveal'
 
 const usdNum = (x: bigint) => Number(x) / 1e6
@@ -37,8 +37,11 @@ export function NodeTab(p: DeepProps) {
   const lineage: number[] = []
   for (let n = node; n && n.id !== 0; n = p.nodes[n.parent]) lineage.unshift(n.id)
   lineage.unshift(0)
-  const amt = Number(p.amount)
-  const amountOk = Number.isFinite(amt) && amt >= 1 && BigInt(Math.round(amt * 1e6)) <= p.wallet
+  const units = toUnits(p.amount)
+  const amt = Number(units) / 1e6
+  const tooSmall = units > 0n && units < 1_000_000n
+  const tooBig = units > p.wallet
+  const amountOk = units >= 1_000_000n && !tooBig
   const max = Math.floor(Number(p.wallet) / 1e6)
   const set = (v: number) => p.setAmount(String(v))
 
@@ -56,9 +59,10 @@ export function NodeTab(p: DeepProps) {
       </div>
 
       <div className="amount membrane">
-        <input value={p.amount} onChange={e => p.setAmount(e.target.value.replace(/[^0-9.]/g, ''))} inputMode="decimal" aria-label={t('act.amount')} placeholder="0" />
+        <input value={p.amount} onChange={e => p.setAmount(cleanAmount(e.target.value))} inputMode="decimal" aria-label={t('act.amount')} placeholder="0" />
         <span className="unit">USDC</span>
       </div>
+      {(tooSmall || tooBig) && <p className="hint-err">{tooSmall ? t('act.belowMin') : t('act.overWallet')}</p>}
       <div className="quick">
         {[10, 50, 100].map(v => <button key={v} className="cell-quiet" aria-pressed={amt === v} onClick={() => set(v)}>{v}</button>)}
         <button className="cell-quiet" aria-pressed={amt === max && max > 0} onClick={() => set(max)}>{t('act.max')}</button>

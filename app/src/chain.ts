@@ -14,7 +14,9 @@ import local from './local.json'
 // Local test chain only. The mnemonic is anvil's public test phrase; its accounts hold only
 // mock USDC on a chain that exists on this Mac. Nothing here touches a real network.
 const MNEMONIC = 'test test test test test test test test test test test junk'
-const RPC = 'http://127.0.0.1:8545'
+// Same-origin path proxied by the dev server to the chain on this Mac (vite.config.ts),
+// so phones on the Wi-Fi can use it too.
+const RPC = `${location.origin}/rpc`
 
 export const EVOLUTION = local.evolution as Address
 export const USDC = local.usdc as Address
