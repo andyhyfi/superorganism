@@ -4,7 +4,7 @@ import { spawn } from 'node:child_process'
 import { setTimeout as sleep } from 'node:timers/promises'
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 const PORT = 9338
-const proc = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${PORT}`, '--user-data-dir=' + process.env.TMPDIR + '/sound-profile', '--window-size=1728,1117', '--autoplay-policy=no-user-gesture-required', 'about:blank'], { stdio: 'ignore' })
+const proc = spawn(CHROME, ['--headless=new', `--remote-debugging-port=${PORT}`, '--user-data-dir=' + process.env.TMPDIR + '/sound-profile-' + Date.now(), '--window-size=1728,1117', '--autoplay-policy=no-user-gesture-required', 'about:blank'], { stdio: 'ignore' })
 let ws, id = 0
 const pending = new Map()
 const send = (method, params = {}) => new Promise(res => { const i = ++id; pending.set(i, res); ws.send(JSON.stringify({ id: i, method, params })) })

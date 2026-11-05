@@ -5,7 +5,8 @@
 
 const SOUND = {
   master: 0.55, // overall volume
-  ambience: 0.22, // the bed under everything
+  ambience: 0.22, // the bed under everything (hum and pads)
+  water: 0.035, // the water noise inside the bed: kept very low and dark, so it never sounds like static
   effects: 0.5, // events
   maxPerSecond: 4, // more events than this in a second are skipped (busy networks stay calm)
   reverb: 0.45, // how much of each effect goes to the water-like reverb
@@ -107,11 +108,11 @@ class Sound {
     noise.buffer = noiseBuffer(ctx, 4)
     noise.loop = true
     const lp = ctx.createBiquadFilter()
-    lp.type = 'lowpass'; lp.frequency.value = 420; lp.Q.value = 0.4
+    lp.type = 'lowpass'; lp.frequency.value = 260; lp.Q.value = 0.3
     const sweep = ctx.createOscillator(); sweep.frequency.value = 0.035
-    const sweepDepth = ctx.createGain(); sweepDepth.gain.value = 220
+    const sweepDepth = ctx.createGain(); sweepDepth.gain.value = 110
     sweep.connect(sweepDepth).connect(lp.frequency)
-    const ng = ctx.createGain(); ng.gain.value = 0.16
+    const ng = ctx.createGain(); ng.gain.value = SOUND.water
     noise.connect(lp).connect(ng).connect(bed)
     noise.start(); sweep.start()
     return bed
