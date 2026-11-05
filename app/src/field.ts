@@ -23,6 +23,7 @@ const WATER = {
   room: 1.5, // dish size relative to the cells it holds (bigger = more open water)
   emptyDrift: 9, // how fast an emptied cell drifts outward (px/s)
   splitPush: 70, // how hard the two halves of a split push apart (they glide off, then the water slows them)
+  shove: 9, // how much momentum a dividing cell gives the neighbors it pushes aside
 }
 
 // The galaxy swirl: the whole network turns slowly clockwise around the center and is drawn
@@ -33,7 +34,7 @@ const SWIRL = {
   pull: 9, // inward drift toward the center; cells pack into one bundle and bump each other
   core: 30, // the pull fades out only inside this distance from the center
   noise: 1.2, // a little leftover current, so the motion never looks mechanical
-  splitPulse: 1, // breath-out strength from a split
+  splitPulse: 0, // a split no longer breathes the network out: the dividing cell shoves its neighbors aside
   withdrawPulse: 0.5, // breath-out strength from a withdrawal
   pulsePush: 26, // outward speed at full breath
   pulseFade: 0.45, // how quickly a breath fades (lower = longer)
@@ -396,7 +397,12 @@ export class Field {
 
   /** How far a cell reaches from its center (a dividing cell is stretched along its axis). */
   private reach(n: VNode) {
-    return n.r * (n.splitting ? 1.52 : 1.03)
+    const s = n.splitting
+    if (!s) return n.r * 1.03
+    // a dividing cell grows along its axis as the halves part: lobe offset plus a lobe's radius
+    const raw = Math.min(1, s.p)
+    const rc = n.r * (1 - ease(raw) * (1 - Math.SQRT1_2))
+    return rc * (1.03 + Math.pow(raw, splitExponent(n.r)) * splitEnd(rc))
   }
 
   private step(dt: number) {
@@ -465,6 +471,12 @@ export class Field {
         const over = min - d
         a.x -= ux * over * wa; a.y -= uy * over * wa
         b.x += ux * over * wb; b.y += uy * over * wb
+        if (a.splitting || b.splitting) {
+          // a dividing cell shoves its neighbors: they glide away with momentum, small ones further
+          const k = WATER.shove
+          a.vx -= ux * over * wa * k; a.vy -= uy * over * wa * k
+          b.vx += ux * over * wb * k; b.vy += uy * over * wb * k
+        }
         const vn = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy
         if (vn < 0) {
           const jn = (-(1 + WATER.bounce) * vn) / (1 / ma + 1 / mb)

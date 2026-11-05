@@ -7,12 +7,13 @@ import {
 import { Field } from './field'
 import { attachGestures } from './gestures'
 import { Deep, type Tab, type Sheet, type SelectedInfo } from './Deep'
-import { fmtUsd, toUnits } from './format'
+import { toUnits } from './format'
 import { Plus, Minus, Maximize2, LayoutList, Waves } from 'lucide-react'
 import { installCellTexture } from './cellTexture'
 import { isRevealAll, setRevealAll, t } from './reveal'
 import { Orb } from './Tabs'
 import { TestDials } from './TestDials'
+import { Rolling } from './Rolling'
 import './app.css'
 import './cell.css'
 
@@ -293,9 +294,9 @@ export default function App() {
         onClick={() => { setMode('deep'); setTab('yours'); if (narrow && sheet === 'peek') setSheet('half') }}
         onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setMode('deep'); setTab('yours') } }}
       >
-        <span className="m"><span className="sub">{t('hud.wallet')}</span><span className="num">{fmtUsd(wallet)}</span></span>
+        <span className="m"><span className="sub">{t('hud.wallet')}</span><span className="num"><Rolling value={wallet} /></span></span>
         <span className="divider" />
-        <span className="m"><span className="sub">{t('hud.deposited')}</span><span className="num gold">{fmtUsd(held)}</span></span>
+        <span className="m"><span className="sub">{t('hud.deposited')}</span><span className="num gold"><Rolling value={held} /></span></span>
         <span className="mine cell-quiet" aria-hidden="true">
           <span className="orbs">{heldIds.slice(0, 3).map(id => <Orb key={id} colors={fieldRef.current?.colorsOf(id)} size={14} />)}</span>
           {heldIds.length}

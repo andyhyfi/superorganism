@@ -6,6 +6,7 @@ import type { DeepProps } from './Deep'
 import { cleanAmount, fmtPct, fmtUsd, fromUnits, short, toUnits } from './format'
 import { shown, t, type Ctx, type InfoId } from './reveal'
 import { nameOf } from './names'
+import { Rolling } from './Rolling'
 
 const usdNum = (x: bigint) => Number(x) / 1e6
 
@@ -66,10 +67,10 @@ export function NodeTab(p: DeepProps) {
           <span>{t('cell.balance')}</span>
           <button className="text-btn" onClick={() => p.onFocus(s.id)}>{t('cell.showOnMap')}</button>
         </div>
-        <div className="big">{fmtUsd(s.energy)}<small>{t('cell.energyUnit')}</small></div>
-        <Gate id="cell.yourShare" c={c}>
-          <div className="meta">{t('cell.yourShare')} <span className="gold">{fmtUsd(s.claim)}</span></div>
-        </Gate>
+        <div className="big"><Rolling value={s.energy} /><small>{t('cell.energyUnit')}</small></div>
+        {/* Your part of this node, always the same height: a bar of everything deposited here with
+            your part lit in gold, and the numbers on one line. Nothing appears or disappears. */}
+        <ShareBar total={s.total} yours={s.claim} />
       </div>
 
       <div className="segmented side" role="tablist">
@@ -184,7 +185,7 @@ export function NetworkTab(p: DeepProps) {
     <>
       <div className="hero">
         <div className="label"><span>{t('net.held')}</span></div>
-        <div className="big">{fmtUsd(total)}<small>USDC</small></div>
+        <div className="big"><Rolling value={total} /><small>USDC</small></div>
         <div className="meta">{meta}</div>
       </div>
 
@@ -227,7 +228,7 @@ export function YoursTab(p: DeepProps) {
     <>
       <div className="hero">
         <div className="label"><span>{t('you.balance')}</span></div>
-        <div className="big">{fmtUsd(sum)}<small>USDC</small></div>
+        <div className="big"><Rolling value={sum} /><small>USDC</small></div>
         <div className="meta">{fmtUsd(p.wallet)} USDC {t('you.wallet')}</div>
       </div>
       {!held.length ? (
@@ -316,6 +317,21 @@ function Row({ k, v }: { k: string; v: string }) {
     <div className="cell">
       <span className="k">{k}</span>
       <span className="v">{v}</span>
+    </div>
+  )
+}
+
+/** Everything deposited in a node, with your part lit. Fixed height: never shifts the menu. */
+function ShareBar({ total, yours }: { total: bigint; yours: bigint }) {
+  const pct = total > 0n ? Number((yours * 10_000n) / total) / 100 : 0
+  const w = yours > 0n ? Math.max(2, Math.min(100, pct)) : 0
+  return (
+    <div className="share">
+      <div className="share-track"><span className="share-fill" style={{ width: `${w}%` }} /></div>
+      <div className="share-row">
+        <span>{t('cell.yourShare')} <span className={yours > 0n ? 'gold num' : 'num'}>{fmtUsd(yours)}</span></span>
+        <span className="num">{yours > 0n ? `${pct < 0.01 ? '<0.01' : pct.toFixed(pct < 10 ? 2 : 1)}% ${t('cell.ofDeposits')}` : `${fmtUsd(total)} ${t('cell.depositedShort')}`}</span>
+      </div>
     </div>
   )
 }

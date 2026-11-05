@@ -44,7 +44,9 @@ export const INFO = {
 
   // a cell
   'cell.balance': { label: 'Balance', rule: { always: true } },
-  'cell.yourShare': { label: 'Yours', rule: { heldHere: 0.000001 } },
+  'cell.yourShare': { label: 'Yours', rule: { always: true } },
+  'cell.ofDeposits': { label: 'of deposits', rule: { always: true } },
+  'cell.depositedShort': { label: 'deposited', rule: { always: true } },
   'cell.showOnMap': { label: 'Show on map', rule: { always: true } },
   'cell.energyUnit': { label: 'energy', rule: { always: true } },
   'cell.deposits': { label: 'Deposited here', rule: { always: true }, note: 'money rule: keep visible' },

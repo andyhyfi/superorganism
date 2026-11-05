@@ -25,6 +25,8 @@ try {
     const live=[...f.nodes.values()].filter(n=>!n.splitting && n.total>0.000001).sort((a,b)=>b.r-a.r);
     const big=live[0];
     // speed profile of the lobe gap during the pinch and after hand-off
+    const others=live.filter(n=>n!==big).map(n=>({n, x:n.x, y:n.y, d:Math.hypot(n.x-big.x,n.y-big.y)-n.r-big.r})).sort((p,q)=>p.d-q.d);
+    const near=others.slice(0,4), far=others.slice(-4);
     f.apply([{kind:'split', parent:big.id, c0:9001, c1:9002, key:'t', block:0n}]);
     const ang=big.splitting.ang, r0=big.r, T=2.6;
     const gap=[];
@@ -38,13 +40,16 @@ try {
       gap.push(+sep.toFixed(1)); step(6);
     }
     const speed=gap.slice(1).map((g,i)=>Math.round((g-gap[i])*10));
+    const moved=g=>Math.round(g.reduce((a,o)=>a+Math.hypot(o.n.x-o.x,o.n.y-o.y),0)/g.length);
+    const nearMoved=moved(near), farMoved=moved(far);
     // collisions: two cells alone in open water, the big one sent at the small one
     const a=live[1], b=live[live.length-1];
+    // neighbors of the split cell: how far they were moved over the 2.6 s split (no network-wide jump)
     for(const [k,n] of [...f.nodes]) if(n!==a && n!==b) f.nodes.delete(k); f.links=[]; // only the two cells remain
     b.x=0; b.y=0; a.x=-(a.r*1.03+b.r*1.03+3+3); a.y=0; a.vx=60; a.vy=0; b.vx=0; b.vy=0;
     f.pulse=0; step(10);
     const av=Math.round(a.vx), bv=Math.round(b.vx);
-    return JSON.stringify({bigR:Math.round(r0), separationSpeedPerTenth: speed, collision:{bigR:Math.round(a.r), bigSpeedBefore:60, bigSpeedAfter:av, smallR:Math.round(b.r), smallSpeedAfter:bv}});
+    return JSON.stringify({bigR:Math.round(r0), neighborsMoved:{nearest4:nearMoved, farthest4:farMoved}, separationSpeedPerTenth: speed, collision:{bigR:Math.round(a.r), bigSpeedBefore:60, bigSpeedAfter:av, smallR:Math.round(b.r), smallSpeedAfter:bv}});
   })()`)
   console.log(out)
 } finally { ws?.close(); proc.kill() }
