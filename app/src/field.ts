@@ -4,6 +4,7 @@
 import type { Address } from 'viem'
 import type { ChainNode, NetEvent } from './chain'
 import { Painter, hsl } from './painter'
+import { SPECIES, hex, speciesOf } from './species'
 
 const TAU = Math.PI * 2
 const rand = (a: number, b: number) => a + Math.random() * (b - a)
@@ -42,6 +43,8 @@ type VNode = {
   total: number // USDC
   mid: number // roll-curve midpoint, USDC
   hue: number
+  sp: number // species (look); placeholder: from lineage, later from mutations
+  variant: number
   phase: number; spin: number
   bubbles: Bubble[]
   alpha: number
@@ -208,7 +211,10 @@ export class Field {
     const parent = chain[c.parent]
     const pv = c.id === 0 ? null : this.nodes.get(c.parent)
     const hue = this.hueOf(c, chain)
+    const path: number[] = []
+    for (let n = c; n.id !== 0; n = chain[n.parent]) path.unshift(n.id)
     return {
+      sp: speciesOf(path), variant: c.id,
       id: c.id,
       x: pv ? pv.x + rand(-20, 20) : 0,
       y: pv ? pv.y + rand(-20, 20) : 0,
@@ -266,6 +272,7 @@ export class Field {
         vx: ux * 0.35 * s, vy: uy * 0.35 * s,
         r: rc, total: n.total / 2, mid: n.mid,
         hue: n.hue + (id % 2 ? 9 : -9),
+        sp: id % 2 === 0 ? (n.sp + 1 + (id % 5)) % SPECIES.length : n.sp, variant: id,
         phase: n.phase, spin: n.spin,
         // every claim halves into each child, so both children carry every depositor
         bubbles: n.bubbles.filter(b => !b.out).map(b => ({ ...b, amount: b.amount / 2, a: b.a + i * 1.3, in: 1 })),
@@ -290,7 +297,7 @@ export class Field {
     for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
       const a = list[i], b = list[j]
       const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 0.01
-      const min = (a.r + b.r) * 1.35 + 18
+      const min = (a.r + b.r) * 1.5 + 24
       if (d < min) {
         const f = ((min - d) / min) * 0.02 * f60, ux = dx / d, uy = dy / d
         a.vx -= ux * f; a.vy -= uy * f; b.vx += ux * f; b.vy += uy * f
@@ -520,36 +527,39 @@ export class Field {
     const reach = r * 2.1 + (lobes?.off ?? 0)
     if (x + reach < 0 || y + reach < 0 || x - reach > this.W || y - reach > this.H) return
     const { paint } = this
-    const f = fillOf(n.total, n.mid), h = n.hue
+    const f = fillOf(n.total, n.mid), sp = n.sp
     const rot = this.t * 0.12 * n.spin + n.phase
+    const drift = this.t * 0.02 * n.spin + n.phase // the body itself turns very slowly
+    const boost = selected ? 1.8 : 1
     if (lobes) {
-      // dividing: one glow, a body and spiral in each lobe; the outline below is the pinched membrane
+      // dividing: one glow, a body in each lobe; the outline below is the pinched membrane
       const { ux, uy, off } = lobes
-      const share = 1 - 0.35 * (1 - Math.min(1, off / r)) // overlapping lobes add up; dim them while they overlap
-      paint.glow(x, y, r + off * 0.6, h, alpha)
+      paint.glow(x, y, r + off * 0.6, sp, alpha)
       for (const sgn of [1, -1]) {
         const lx = x + ux * off * sgn, ly = y + uy * off * sgn
-        paint.body(lx, ly, r, h, alpha * share)
-        paint.spiral(lx, ly, r, f, rot, h, alpha * share)
+        paint.halo(lx, ly, r, sp, alpha * 0.6)
+        paint.body(lx, ly, r, sp, n.variant, drift, alpha)
+        paint.spiral(lx, ly, r, f, rot, sp, alpha)
       }
     } else {
-      paint.glow(x, y, r, h, alpha)
-      paint.body(x, y, r, h, alpha)
-      paint.spiral(x, y, r, f, rot, h, alpha)
+      paint.glow(x, y, r, sp, alpha, boost)
+      paint.halo(x, y, r, sp, alpha, boost)
+      paint.body(x, y, r, sp, n.variant, drift, alpha)
+      paint.spiral(x, y, r, f, rot, sp, alpha)
     }
     const scale = Math.max(0.6, Math.min(1.6, this.cam.z))
-    const other = hsl(h - 25, 100, 88), gold = hsl(42, 100, 70)
+    const other = hex(SPECIES[sp].speck), gold = hsl(42, 100, 70)
     for (const b of n.bubbles) {
       const bx = x + Math.cos(b.a) * b.d * r * 0.85, by = y + Math.sin(b.a) * b.d * r * 0.85
       const s = (1.2 + Math.sqrt(b.amount) * 0.32) * b.in * scale
       if (s < 0.2) continue
-      paint.speck(bx, by, s * 2.2, b.mine ? gold : other, (b.mine ? 0.95 : 0.8) * alpha * b.in)
+      paint.speck(bx, by, s * (b.mine ? 2.2 : 1.7), b.mine ? gold : other, (b.mine ? 0.95 : 0.38) * alpha * b.in)
     }
     paint.outline(
       this.membranePts(n, x, y, r),
-      hsl(h - 15, 100, selected ? 92 : 80),
-      (selected ? 0.95 : 0.65) * alpha,
-      selected ? 1.8 : 1.2,
+      selected ? 0xffffff : hex(SPECIES[sp].rim),
+      (selected ? 0.85 : 0.22) * alpha,
+      selected ? 2 : 1,
     )
   }
 
