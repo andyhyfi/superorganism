@@ -38,7 +38,7 @@ export function NodeTab(p: DeepProps) {
   for (let n = node; n && n.id !== 0; n = p.nodes[n.parent]) lineage.unshift(n.id)
   lineage.unshift(0)
   const [side, setSide] = useState<'deposit' | 'withdraw'>('deposit')
-  const out = side === 'withdraw' && s.claim > 0n
+  const out = side === 'withdraw'
   const limit = out ? s.claim : p.wallet
   const units = toUnits(p.amount)
   const tooSmall = units > 0n && units < 1_000_000n && !(out && units === s.claim)
@@ -63,22 +63,21 @@ export function NodeTab(p: DeepProps) {
         </Gate>
       </div>
 
-      {s.claim > 0n && (
-        <div className="segmented side" role="tablist">
-          {(['deposit', 'withdraw'] as const).map(k => (
-            <button key={k} role="tab" aria-selected={side === k} onClick={() => { setSide(k); p.setAmount('') }}>{t(k === 'deposit' ? 'act.deposit' : 'act.withdraw')}</button>
-          ))}
-        </div>
-      )}
+      <div className="segmented side" role="tablist">
+        {(['deposit', 'withdraw'] as const).map(k => (
+          <button key={k} role="tab" aria-selected={side === k} onClick={() => { setSide(k); p.setAmount('') }}>{t(k === 'deposit' ? 'act.deposit' : 'act.withdraw')}</button>
+        ))}
+      </div>
       <div className="amount membrane">
         <input value={p.amount} onChange={e => p.setAmount(cleanAmount(e.target.value))} inputMode="decimal" aria-label={t('act.amount')} placeholder="0" />
         <span className="unit">USDC</span>
         {units > 0n && <button className="clear" aria-label={t('act.clear')} onClick={() => p.setAmount('')}><X size={14} strokeWidth={2.5} /></button>}
       </div>
+      {out && s.claim === 0n && <p className="hint">{t('act.nothingHere')}</p>}
       {(tooSmall || tooBig) && <p className="hint-err">{tooSmall ? t('act.belowMin') : out ? t('act.overClaim') : t('act.overWallet')}</p>}
       <div className="quick">
         {[10, 50, 100].map(v => <button key={v} className="cell-quiet" disabled={units >= limit} onClick={() => add(v)}>+{v}</button>)}
-        <button className="cell-quiet" aria-pressed={units === limit && limit > 0n} onClick={() => p.setAmount(fromUnits(limit))}>{t('act.max')}</button>
+        <button className="cell-quiet" disabled={limit === 0n} aria-pressed={units === limit && limit > 0n} onClick={() => p.setAmount(fromUnits(limit))}>{t('act.max')}</button>
       </div>
       <div className="buttons">
         {out ? (
@@ -202,7 +201,8 @@ export function YoursTab(p: DeepProps) {
           <div className="group membrane">
             {held.map(([id, c]) => (
               <button key={id} className="cell" onClick={() => p.onSelect(id)}>
-                <span className="k">{id}</span>
+                <Orb id={id} colors={p.colorsOf(id)} />
+                <span className="k">{t('you.cell')} {id}</span>
                 <span className="v strong gold">{fmtUsd(c)}</span>
                 <ChevronRight size={16} className="chev" />
               </button>
@@ -216,6 +216,18 @@ export function YoursTab(p: DeepProps) {
         </>
       )}
     </>
+  )
+}
+
+/** A small orb in a cell's own colors (core, body, rim), for lists. */
+export function Orb({ colors, size = 22 }: { id?: number; colors?: { dark: string; light: string; core: string; rim: string }; size?: number }) {
+  const c = colors ?? { dark: '#222', light: '#555', core: '#999', rim: '#777' }
+  return (
+    <span className="orb" style={{
+      width: size, height: size,
+      background: `radial-gradient(circle at 50% 50%, ${c.core} 0%, ${c.light} 32%, ${c.dark} 70%, ${c.rim} 96%)`,
+      boxShadow: `0 0 8px ${c.rim}88`,
+    }} />
   )
 }
 

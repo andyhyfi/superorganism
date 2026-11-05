@@ -148,3 +148,6 @@ button.cell:active { background: var(--fill-2); }
   background: rgba(255,255,255,0.12); color: var(--fg, #fff); border: 0;
 }
 .quick button:disabled { opacity: 0.35; }
+
+.hint { margin: 8px 0 0 16px; font-size: 13px; color: var(--text-2); }
+.cell .orb { margin-right: 10px; }

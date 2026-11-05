@@ -28,6 +28,12 @@ contract DeployLocal is Script {
     uint128 internal constant DEMO_MID_FILL = 60e6;
     uint256 internal constant DEMO_SPLIT_ODDS = 2;
 
+    // Split-test preset (PRESET=splits, temporary, for testing the split mechanic): the roll curve
+    // reaches its 10% cap almost at once (2 USDC midpoint) and every won roll splits (1 in 1), so
+    // about 1 deposit in 10 splits a cell. 10% is the contract's hard cap.
+    uint128 internal constant SPLITS_MID_FILL = 2e6;
+    uint256 internal constant SPLITS_SPLIT_ODDS = 1;
+
     // Anvil's default test mnemonic. Public, local only, never holds value.
     string internal constant MNEMONIC = "test test test test test test test test test test test junk";
 
@@ -36,7 +42,9 @@ contract DeployLocal is Script {
 
         uint256 deployerKey = vm.deriveKey(MNEMONIC, 0);
         address deployer = vm.addr(deployerKey);
-        bool demo = keccak256(bytes(vm.envOr("PRESET", string("demo")))) != keccak256("real");
+        string memory preset = vm.envOr("PRESET", string("demo"));
+        bool demo = keccak256(bytes(preset)) != keccak256("real");
+        bool splits = keccak256(bytes(preset)) == keccak256("splits");
 
         vm.startBroadcast(deployerKey);
         MockUSDC usdc = new MockUSDC();
@@ -46,8 +54,8 @@ contract DeployLocal is Script {
             MIN_DEPOSIT,
             MIN_WITHDRAW,
             SPLIT_UNIT,
-            demo ? DEMO_SPLIT_ODDS : SPLIT_ODDS,
-            Evolution.Traits(FEE_PPM, 0, ROLL_CAP_PPM, demo ? DEMO_MID_FILL : ROLL_MID_FILL)
+            splits ? SPLITS_SPLIT_ODDS : demo ? DEMO_SPLIT_ODDS : SPLIT_ODDS,
+            Evolution.Traits(FEE_PPM, 0, ROLL_CAP_PPM, splits ? SPLITS_MID_FILL : demo ? DEMO_MID_FILL : ROLL_MID_FILL)
         );
         for (uint256 i = 0; i < ACCOUNTS; ++i) {
             usdc.mint(vm.addr(vm.deriveKey(MNEMONIC, uint32(i))), FUND);
@@ -66,7 +74,7 @@ contract DeployLocal is Script {
 
         string memory obj = "local";
         vm.serializeUint(obj, "chainId", block.chainid);
-        vm.serializeString(obj, "preset", demo ? "demo" : "real");
+        vm.serializeString(obj, "preset", splits ? "splits" : demo ? "demo" : "real");
         vm.serializeAddress(obj, "usdc", address(usdc));
         vm.serializeAddress(obj, "treasury", deployer);
         string memory json = vm.serializeAddress(obj, "evolution", address(evo));

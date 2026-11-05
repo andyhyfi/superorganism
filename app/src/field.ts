@@ -206,6 +206,12 @@ export class Field {
     return best ? { id: best.id, total: best.total } : null
   }
 
+  /** A node's species colors, for UI swatches (undefined if not on screen). */
+  colorsOf(id: number) {
+    const n = this.nodes.get(id)
+    return n ? SPECIES[n.sp] : undefined
+  }
+
   /** Screen position and radius of a node, for anchoring UI. */
   screenOf(id: number): { x: number; y: number; r: number } | null {
     const n = this.nodes.get(id)

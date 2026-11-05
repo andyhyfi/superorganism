@@ -86,3 +86,30 @@ button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+/* ----------------------------------------------------------------- money bar */
+/* Wallet and deposited are always on screen (top right in both modes; left of the menu on desktop). */
+.money.membrane { position: absolute; }
+.money {
+  top: calc(12px + env(safe-area-inset-top)); right: calc(var(--gap) + env(safe-area-inset-right));
+  display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 6px 0 14px;
+  border-radius: 999px; font-size: 13px; white-space: nowrap; z-index: 6;
+  transition: right 0.5s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.money .m { display: flex; flex-direction: column; line-height: 1.1; }
+.money .sub { font-size: 10px; color: var(--text-2); letter-spacing: 0.02em; }
+.money .num { font-weight: 600; font-variant-numeric: tabular-nums; }
+.money .gold { color: var(--gold); }
+.money .divider { width: 1px; height: 22px; background: rgba(255,255,255,0.14); }
+.money .mine {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px 0 6px;
+  border-radius: 999px; border: 0; color: inherit; font: inherit; font-weight: 600; cursor: pointer;
+}
+.money .orbs { display: inline-flex; }
+.money .orbs .orb + .orb { margin-left: -5px; }
+.mode-deep .money { right: calc(var(--side) + var(--gap) * 2); }
+@media (max-width: 720px) and (orientation: portrait) {
+  .mode-deep .money { right: calc(var(--gap) + env(safe-area-inset-right)); }
+  .top { padding-top: calc(60px + env(safe-area-inset-top)); }
+}
+.orb { display: inline-block; border-radius: 50%; flex: none; }

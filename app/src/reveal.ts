@@ -72,6 +72,11 @@ export const INFO = {
   'act.overWallet': { label: 'More than your wallet holds', rule: { always: true } },
   'act.overClaim': { label: 'More than your share here', rule: { always: true } },
   'act.clear': { label: 'Clear', rule: { always: true } },
+  'act.nothingHere': { label: 'You have nothing in this cell to withdraw.', rule: { always: true } },
+  'you.cell': { label: 'Cell', rule: { always: true } },
+  'hud.wallet': { label: 'Wallet', rule: { always: true } },
+  'hud.deposited': { label: 'Deposited', rule: { always: true } },
+  'hud.myCells': { label: 'My cells', rule: { always: true } },
 
   // the network
   'net.held': { label: 'Held across the network', rule: { always: true } },

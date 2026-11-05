@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Starts a local test chain on this Mac and deploys the contracts to it.
 #
-#   ./local.sh         start the chain, deploy, and keep running (Ctrl+C stops it)
+#   ./local.sh                 start the chain, deploy, and keep running (Ctrl+C stops it)
+#   PRESET=splits ./local.sh   temporary: about 1 deposit in 10 splits a cell (for testing splits)
+#   PRESET=real ./local.sh     the production rules
 #
 # Local only: chain ID 31337 at http://127.0.0.1:8545. Every restart starts from zero.
 # The test accounts use anvil's public test mnemonic and hold only mock USDC.

@@ -10,7 +10,8 @@ import { Deep, type Tab, type Sheet, type SelectedInfo } from './Deep'
 import { fmtUsd, toUnits } from './format'
 import { Plus, Minus, Maximize2, LayoutList, Waves } from 'lucide-react'
 import { installCellTexture } from './cellTexture'
-import { isRevealAll, setRevealAll } from './reveal'
+import { isRevealAll, setRevealAll, t } from './reveal'
+import { Orb } from './Tabs'
 import './app.css'
 import './cell.css'
 
@@ -259,13 +260,19 @@ export default function App() {
       <div className={`top ${overlay ? '' : 'hidden'}`}>
         <span className="pill glass membrane">
           {live} {live === 1 ? 'cell' : 'cells'}
-          <span className="sub">{PRESET === 'demo' ? 'Local · demo odds' : 'Local'}</span>
+          <span className="sub">{PRESET === 'splits' ? 'Local · split test' : PRESET === 'demo' ? 'Local · demo odds' : 'Local'}</span>
         </span>
-        <span className="pill glass membrane">
-          {held > 0n && <span className="dot" />}
-          <span className="num">{fmtUsd(held > 0n ? held : wallet)}</span>
-          <span className="sub">{held > 0n ? 'in network' : 'USDC'}</span>
-        </span>
+      </div>
+
+      {/* money: always on screen, in both modes */}
+      <div className="money glass membrane">
+        <span className="m"><span className="sub">{t('hud.wallet')}</span><span className="num">{fmtUsd(wallet)}</span></span>
+        <span className="divider" />
+        <span className="m"><span className="sub">{t('hud.deposited')}</span><span className="num gold">{fmtUsd(held)}</span></span>
+        <button className="mine cell-quiet" onClick={() => { setMode('deep'); setTab('yours') }} aria-label={t('hud.myCells')}>
+          <span className="orbs">{heldIds.slice(0, 3).map(id => <Orb key={id} colors={fieldRef.current?.colorsOf(id)} size={14} />)}</span>
+          {heldIds.length}
+        </button>
       </div>
 
       <div className={ctrlCls}>
@@ -289,6 +296,7 @@ export default function App() {
           onWithdraw={u => sel && act('withdraw', () => withdrawAmount(sel.id, u, sel.claim))}
           onWithdrawAll={() => act('withdrawAll', () => withdrawEverything(heldIds))}
           onClose={() => { select(null); setMode('aquarium') }}
+          colorsOf={id => fieldRef.current?.colorsOf(id)}
         />
       )}
 

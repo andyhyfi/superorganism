@@ -38,6 +38,7 @@ export type DeepProps = {
   onWithdraw: (amount: bigint) => void
   onWithdrawAll: () => void
   onClose: () => void
+  colorsOf: (id: number) => { dark: string; light: string; core: string; rim: string } | undefined
 }
 
 const TABS: { id: Tab; label: string }[] = [
