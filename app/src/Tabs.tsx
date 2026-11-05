@@ -5,6 +5,7 @@ import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Inbox, Spline, X } 
 import type { DeepProps } from './Deep'
 import { cleanAmount, fmtPct, fmtUsd, fromUnits, short, toUnits } from './format'
 import { shown, t, type Ctx, type InfoId } from './reveal'
+import { nameOf } from './names'
 
 const usdNum = (x: bigint) => Number(x) / 1e6
 
@@ -59,6 +60,7 @@ export function NodeTab(p: DeepProps) {
   return (
     <>
       <div className="hero">
+        <div className="cell-name">{nameOf(s.id)}</div>
         <div className="label">
           <span>{t('cell.balance')}</span>
           <button className="text-btn" onClick={() => p.onFocus(s.id)}>{t('cell.showOnMap')}</button>
@@ -119,7 +121,7 @@ export function NodeTab(p: DeepProps) {
                 <button key={`${l.loanId}:${l.holder}`} className="cell" onClick={() => p.onSelect(other)}>
                   <Orb colors={p.colorsOf(other)} />
                   <span className="k">
-                    {lending ? t('cell.lentTo') : t('cell.borrowedFrom')} {t('you.cell').toLowerCase()} {other}
+                    {lending ? t('cell.lentTo') : t('cell.borrowedFrom')} {nameOf(other)}
                     <span className="sub">{t('cell.returnsIn')} {mins} min</span>
                   </span>
                   <span className={lending ? 'v' : 'v strong'}>{lending ? '−' : '+'}{fmtUsd(l.amount)}</span>
@@ -148,7 +150,7 @@ export function NodeTab(p: DeepProps) {
             {lineage.map((id, i) => (
               <span key={id} style={{ display: 'contents' }}>
                 {i > 0 && <ChevronRight size={14} className="arrow" />}
-                <span className="chip cell-quiet" aria-current={id === s.id}>{id}</span>
+                <span className="chip cell-quiet" aria-current={id === s.id}>{nameOf(id)}</span>
               </span>
             ))}
           </div>
@@ -199,7 +201,8 @@ export function NetworkTab(p: DeepProps) {
       <div className="group membrane">
         {rows.map(n => (
           <button key={n.id} className="cell" onClick={() => p.onSelect(n.id)}>
-            <span style={{ width: 44 }} className="num">{n.id}</span>
+            <Orb colors={p.colorsOf(n.id)} size={16} />
+            <span className="name">{nameOf(n.id)}</span>
             <span className="meter"><span style={{ width: `${Math.max(3, Number((n.total * 100n) / max))}%` }} /></span>
             <span className="v num" style={{ width: 84, textAlign: 'right' }}>{fmtUsd(n.total)}</span>
             {(p.claims.get(n.id) ?? 0n) > 0n ? <span className="mark" /> : <span style={{ width: 8 }} />}
@@ -235,7 +238,7 @@ export function YoursTab(p: DeepProps) {
             {held.map(([id, c]) => (
               <button key={id} className="cell" onClick={() => p.onSelect(id)}>
                 <Orb id={id} colors={p.colorsOf(id)} />
-                <span className="k">{t('you.cell')} {id}</span>
+                <span className="k name">{nameOf(id)}</span>
                 <span className="v strong gold">{fmtUsd(c)}</span>
                 <ChevronRight size={16} className="chev" />
               </button>
@@ -282,7 +285,7 @@ export function FeedTab(p: DeepProps) {
           return (
             <button key={e.key} className="cell" onClick={() => !p.nodes[e.borrower]?.split && p.onSelect(e.borrower)}>
               <span className="badge split"><Spline size={16} strokeWidth={2.25} /></span>
-              <span className="k">{t('feed.loan')}<span className="sub">{`${e.lender} → ${e.borrower}`}</span></span>
+              <span className="k">{t('feed.loan')}<span className="sub">{`${nameOf(e.lender)} → ${nameOf(e.borrower)}`}</span></span>
               <span className="v">{fmtUsd(e.amount)}</span>
             </button>
           )
@@ -296,7 +299,7 @@ export function FeedTab(p: DeepProps) {
             {e.kind === 'split' && <span className="badge split"><GitFork size={16} strokeWidth={2.25} /></span>}
             <span className="k">
               {e.kind === 'split' ? t('feed.split') : e.kind === 'deposit' ? t('feed.deposit') : t('feed.withdraw')}
-              <span className="sub">{e.kind === 'split' ? `${e.parent} → ${e.c0}, ${e.c1}` : `${mine ? 'You' : short(e.user)} · ${e.node}`}</span>
+              <span className="sub">{e.kind === 'split' ? `${nameOf(e.parent)} → ${nameOf(e.c0)}, ${nameOf(e.c1)}` : `${mine ? 'You' : short(e.user)} · ${nameOf(e.node)}`}</span>
             </span>
             {e.kind !== 'split' && <span className={mine ? 'v strong gold' : 'v'}>{e.kind === 'withdraw' ? '−' : '+'}{fmtUsd(e.amount)}</span>}
           </button>

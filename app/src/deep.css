@@ -151,3 +151,11 @@ button.cell:active { background: var(--fill-2); }
 
 .hint { margin: 8px 0 0 16px; font-size: 13px; color: var(--text-2); }
 .cell .orb { margin-right: 10px; }
+
+/* cell names: <unnamed_001> until a mutation names the cell */
+.cell-name { font-size: 15px; font-weight: 600; letter-spacing: 0.01em; margin-bottom: 6px; }
+.name { flex: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.cell .orb + .name { margin-left: 10px; }
+.chip { white-space: nowrap; }
+.group .cell .name + .meter { flex: 1; min-width: 24px; margin-left: 10px; }
+.group .cell .k.name { flex: 1; }
