@@ -7,6 +7,8 @@ import { cleanAmount, fmtPct, fmtUsd, fromUnits, short, toUnits } from './format
 import { shown, t, type Ctx, type InfoId } from './reveal'
 import { nameOf } from './names'
 import { Rolling } from './Rolling'
+import { LineageIcon, LineageMap } from './Lineage'
+import { createPortal } from 'react-dom'
 
 const usdNum = (x: bigint) => Number(x) / 1e6
 
@@ -36,9 +38,7 @@ export function NodeTab(p: DeepProps) {
   if (!s) return <Empty />
   const c = playerCtx(p, s.claim)
   const node = p.nodes[s.id]
-  const lineage: number[] = []
-  for (let n = node; n && n.id !== 0; n = p.nodes[n.parent]) lineage.unshift(n.id)
-  lineage.unshift(0)
+  const [mapOpen, setMapOpen] = useState(false)
   const [side, setSide] = useState<'deposit' | 'withdraw'>('deposit')
   const out = side === 'withdraw'
   // deposits: at most the wallet, the per-deposit limit, and the room left under the per-user limit
@@ -64,9 +64,16 @@ export function NodeTab(p: DeepProps) {
       <div className="hero">
         <div className="cell-name">{nameOf(s.id)}</div>
         <div className="label">
-          <span />
+          {shown('cell.lineage', c)
+            ? <button className="icon-btn" aria-label={t('cell.lineage')} title={t('cell.lineage')} onClick={() => setMapOpen(true)}><LineageIcon /></button>
+            : <span />}
           <button className="text-btn" onClick={() => p.onFocus(s.id)}>{t('cell.observe')}</button>
         </div>
+        {mapOpen && createPortal(
+          <LineageMap nodes={p.nodes} selected={s.id} colorsOf={p.colorsOf}
+            onPick={id => { setMapOpen(false); p.onSelect(id) }} onClose={() => setMapOpen(false)} />,
+          document.body,
+        )}
         <div className="big"><Rolling value={s.energy} /></div>
         {/* Your part of this node, graphic only: gold = yours, dark = everyone else's, a small
             slash where they meet. Always the same height. */}
@@ -142,19 +149,6 @@ export function NodeTab(p: DeepProps) {
         <Gate id="cell.generation" c={c}><Row k={t('cell.generation')} v={String(node?.depth ?? 0)} /></Gate>
       </div>
 
-      <Gate id="cell.lineage" c={c}>
-        <div className="section-title">{t('cell.lineage')}</div>
-        <div className="group membrane">
-          <div className="chips">
-            {lineage.map((id, i) => (
-              <span key={id} style={{ display: 'contents' }}>
-                {i > 0 && <ChevronRight size={14} className="arrow" />}
-                <span className="chip cell-quiet" aria-current={id === s.id}>{nameOf(id)}</span>
-              </span>
-            ))}
-          </div>
-        </div>
-      </Gate>
     </>
   )
 }

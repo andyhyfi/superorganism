@@ -90,7 +90,7 @@ export const INFO = {
   'cell.generation': { label: 'Strain', rule: { deposits: 3 }, note: 'placeholder gate' },
   'cell.fee': { label: 'Fee', rule: { always: true }, note: 'money rule: keep visible' },
   'cell.minimum': { label: 'Min', rule: { always: true }, note: 'money rule: keep visible' },
-  'cell.lineage': { label: 'Ancestry', rule: { heldTotal: 50 }, note: 'placeholder gate' },
+  'cell.lineage': { label: 'Lineage', rule: { heldTotal: 50 }, note: 'placeholder gate' },
   'cell.traits': { label: 'Mutations', rule: { trait: 'any' }, note: 'appears once mutations exist' },
 
   // actions (money in and out is never hidden)

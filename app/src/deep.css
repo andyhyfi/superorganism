@@ -91,15 +91,6 @@ button.cell:active { background: var(--fill-2); }
 .cell .meter > span { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
 .cell .mark { width: 8px; height: 8px; border-radius: 50%; background: var(--gold); flex: none; }
 
-/* lineage chips */
-.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px; }
-.chip {
-  height: 28px; padding: 0 12px; border-radius: 999px; border: 0;
-  display: inline-flex; align-items: center; color: var(--text); font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums;
-}
-.chip:disabled { cursor: default; }
-.chips .arrow { color: var(--text-3); align-self: center; }
-
 /* amount entry */
 .amount {
   display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 15px; border-radius: 12px;
@@ -199,3 +190,36 @@ button.cell:active { background: var(--fill-2); }
 .cell.has-hint:hover .hint-mark { opacity: 0.9; }
 .cell.has-hint .k { min-width: 0; overflow: hidden; }
 .cell.has-hint .hint-text { font-size: 12px; line-height: 18px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+
+/* lineage: a small fork icon on the Specimen tab opens the colony's family tree */
+.icon-btn { border: 0; background: none; padding: 0; margin: -6px 0 -6px -2px; width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; color: var(--text-2); cursor: pointer; border-radius: 8px; }
+.icon-btn:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+.icon-btn:active { opacity: 0.6; }
+.lineage { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; background: rgba(6, 3, 14, 0.45); animation: lin-in 0.35s ease both; }
+@keyframes lin-in { from { opacity: 0; } to { opacity: 1; } }
+.lineage-panel {
+  position: relative; width: min(920px, calc(100vw - 32px)); height: min(640px, calc(100vh - 64px)); border-radius: 22px;
+  background: rgba(22, 14, 38, 0.72); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%);
+  display: flex; flex-direction: column; overflow: hidden; animation: lin-up 0.45s cubic-bezier(.2,.8,.2,1) both;
+}
+@keyframes lin-up { from { transform: translateY(12px) scale(0.98); } to { transform: none; } }
+.lineage-head { display: flex; align-items: center; gap: 10px; padding: 14px 14px 10px 20px; }
+.lineage-title { font-family: var(--font-display); font-size: 17px; color: var(--text); }
+.lineage-name { font-size: 13px; color: var(--text-2); flex: 1; }
+.lineage-scroll { flex: 1; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+.lineage-scroll { display: flex; }
+.lineage-scroll svg { display: block; margin: auto; flex: none; }
+.lineage .lin { fill: none; stroke: rgba(255,255,255,0.16); stroke-width: 1.25; }
+.lineage .lin.lit { stroke: var(--gold); stroke-width: 2; filter: drop-shadow(0 0 3px var(--gold)); }
+.lineage .lnode.past .div { fill: rgba(255,255,255,0.35); }
+.lineage .lnode.past .gone { fill: none; stroke: rgba(255,255,255,0.3); stroke-width: 1; }
+.lineage .lnode.past.lit .div { fill: var(--gold); }
+.lineage .lnode.live { cursor: pointer; }
+.lineage .lnode .hit { fill: transparent; }
+.lineage .lnode.live:hover circle:not(.hit):not(.halo) { filter: brightness(1.3); }
+.lineage .lnode .halo { fill: none; stroke: var(--gold); stroke-width: 1.5; opacity: 0.85; }
+@media (max-width: 720px) and (orientation: portrait) {
+  .lineage { align-items: flex-end; }
+  .lineage-panel { width: 100vw; height: 78vh; border-radius: 22px 22px 0 0; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) { .lineage, .lineage-panel { animation: none; } }
