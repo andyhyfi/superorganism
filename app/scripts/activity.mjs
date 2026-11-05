@@ -24,6 +24,37 @@ const MAX_LIVE_NODES = 20 // Andy: about 20 nodes is the test size; activity onl
 const pub = createPublicClient({ chain: foundry, transport: http(RPC) })
 if ((await pub.getChainId()) !== 31337) throw new Error('activity.mjs runs on the local chain only')
 
+// Account 11 plays the randomness operator (Gelato VRF on Ink): it answers each loan event
+// request with a random number, a few seconds later.
+const opAccount = mnemonicToAccount(MNEMONIC, { addressIndex: 11 })
+const operator = createWalletClient({ account: opAccount, chain: foundry, transport: http(RPC) })
+let answered = 0n
+async function answerRequests() {
+  try {
+    const pending = await pub.readContract({ address: local.evolution, abi: evolutionAbi, functionName: 'pendingRequest' })
+    if (pending !== 0n && pending !== answered) {
+      await sleep(rand(1500, 4000))
+      const r = BigInt('0x' + [...crypto.getRandomValues(new Uint8Array(32))].map(b => b.toString(16).padStart(2, '0')).join(''))
+      const hash = await operator.writeContract({ address: local.evolution, abi: evolutionAbi, functionName: 'runLoanEvent', args: [pending, r] })
+      const receipt = await pub.waitForTransactionReceipt({ hash })
+      answered = pending
+      const logs = parseEventLogs({ abi: evolutionAbi, logs: receipt.logs })
+      const made = logs.filter(l => l.eventName === 'LoanMade')
+      const splits = logs.filter(l => l.eventName === 'Split')
+      console.log(`event     #${pending}  ${made.map(l => `${l.args.lender}->${l.args.borrower} ${usd(l.args.amount)}`).join(', ') || 'no sends'}${splits.length ? `  SPLIT x${splits.length}` : ''}`)
+    }
+  } catch (e) {
+    console.log('event skip:', (e?.shortMessage || e?.message || String(e)).split('\n')[0])
+  }
+}
+let answering = false
+setInterval(async () => {
+  if (answering) return
+  answering = true
+  await answerRequests()
+  answering = false
+}, 1000)
+
 const actors = Array.from({ length: 8 }, (_, i) => {
   const account = mnemonicToAccount(MNEMONIC, { addressIndex: i + 1 })
   return { account, wallet: createWalletClient({ account, chain: foundry, transport: http(RPC) }) }
@@ -78,7 +109,10 @@ while (true) {
       const w = live.map(n => 1 + Number(n.total) / 200e6)
       let r = Math.random() * w.reduce((x, y) => x + y, 0), node = live[0]
       for (let i = 0; i < live.length; i++) { r -= w[i]; if (r <= 0) { node = live[i]; break } }
+      // stay under the 1,000 USDC per-user limit: withdraw instead when near it
+      const held = await pub.readContract({ address: E, abi: evolutionAbi, functionName: 'heldOf', args: [a.account.address] })
       const amount = BigInt(Math.round((Math.random() < 0.85 ? rand(1, 40) : rand(60, 160)) * 1e6))
+      if (held + amount > 1_000_000_000n) { await sleep(500); continue }
       const hash = await a.wallet.writeContract({ address: E, abi: evolutionAbi, functionName: 'deposit', args: [BigInt(node.id), amount] })
       const receipt = await pub.waitForTransactionReceipt({ hash })
       const split = parseEventLogs({ abi: evolutionAbi, logs: receipt.logs }).find(l => l.eventName === 'Split')

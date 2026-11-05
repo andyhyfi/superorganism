@@ -16,6 +16,8 @@ contract Handler is Test {
     mapping(address => uint256) public deposited; // gross amounts sent in
     mapping(address => uint256) public received; // net amounts paid out
     uint256 public splits;
+    uint256 public events;
+    uint256 public loans;
     uint256 public calls;
 
     constructor(EvolutionHarness evo_, MockUSDC usdc_, address[] memory actors_) {
@@ -80,6 +82,33 @@ contract Handler is Test {
             received[u] += usdc.balanceOf(u) - before;
         } catch {}
         ++calls;
+    }
+
+    /// A loan event with random sends, as the randomness operator would run it.
+    function loanEvent(uint256 seed) external {
+        evo.setEventMode(EvolutionHarness.Mode.Always);
+        address u = actors[seed % actors.length];
+        uint256 nodeId = _liveNode(seed >> 8);
+        usdc.mint(u, 1e6);
+        vm.startPrank(u);
+        usdc.approve(address(evo), 1e6);
+        evo.deposit(nodeId, 1e6);
+        vm.stopPrank();
+        evo.setEventMode(EvolutionHarness.Mode.Never);
+        deposited[u] += 1e6;
+        uint256 id = evo.pendingRequest();
+        if (id == 0) return;
+        evo.setMode(seed % 3 == 0 ? EvolutionHarness.Mode.Always : EvolutionHarness.Mode.Never);
+        vm.prank(evo.OPERATOR());
+        evo.runLoanEvent(id, seed);
+        ++events;
+        loans = evo.loanCount();
+        ++calls;
+    }
+
+    /// Time passes, so loans reach their due time.
+    function wait(uint256 secs) external {
+        vm.warp(block.timestamp + bound(secs, 1, 2 hours));
     }
 
     function sweepFees() external {

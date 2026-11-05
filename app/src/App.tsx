@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import {
-  assertLocalChain, readNodes, readEvents, claimOf, chancesAt, yourWallet, deposit, withdrawAmount,
-  claimsOf, withdrawEverything, feesOwed, splitOdds,
-  publicClient, you, PRESET, type ChainNode, type NetEvent,
+  assertLocalChain, readNetwork, readEvents, claimOf, chancesAt, yourWallet, yourHeld, deposit, withdrawAmount,
+  claimsOf, withdrawEverything, feesOwed, splitOdds, limits as readLimits, readDials, setDials,
+  publicClient, you, PRESET, type ChainNode, type NetEvent, type LoanLink, type Dials,
 } from './chain'
 import { Field } from './field'
 import { attachGestures } from './gestures'
@@ -12,6 +12,7 @@ import { Plus, Minus, Maximize2, LayoutList, Waves } from 'lucide-react'
 import { installCellTexture } from './cellTexture'
 import { isRevealAll, setRevealAll, t } from './reveal'
 import { Orb } from './Tabs'
+import { TestDials } from './TestDials'
 import './app.css'
 import './cell.css'
 
@@ -35,6 +36,10 @@ export default function App() {
   const [fees, setFees] = useState(0n)
   const [odds, setOdds] = useState(0n)
   const [wallet, setWallet] = useState(0n)
+  const [heldNet, setHeldNet] = useState(0n)
+  const [lim, setLim] = useState({ maxDeposit: 0n, maxPerUser: 0n, eventFee: 0n })
+  const [links, setLinks] = useState<LoanLink[]>([])
+  const [dials, setDialsState] = useState<Dials>({ splitPpm: 0, eventPpm: 0 })
   const [amount, setAmount] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
 
@@ -48,19 +53,20 @@ export default function App() {
 
   const refreshMine = async (all: ChainNode[]) => {
     const live = all.filter(n => !n.split).map(n => n.id)
-    const [c, f, w] = await Promise.all([claimsOf(live), feesOwed(), yourWallet()])
+    const [c, f, w, h] = await Promise.all([claimsOf(live), feesOwed(), yourWallet(), yourHeld()])
     setClaims(new Map(live.map((id, i) => [id, c[i]])))
     setFees(f)
     setWallet(w)
+    setHeldNet(h)
   }
 
   // ------------------------------------------------------------ selection
   const refreshSelected = useCallback(async (id: number) => {
     const node = nodesRef.current[id]
     if (!node || node.split) return setSel(null)
-    const [claim, ch] = await Promise.all([claimOf(id), chancesAt(id, node.total)])
+    const [claim, ch] = await Promise.all([claimOf(id), chancesAt(id, node.rollFill)])
     if (fieldRef.current?.selected !== id) return
-    setSel({ id, total: node.total, claim, roll: ch.roll, split: ch.split })
+    setSel({ id, total: node.total, energy: node.energy, lent: node.lent, borrowed: node.borrowed, claim, roll: ch.roll, split: ch.split })
   }, [])
 
   const select = useCallback((id: number | null) => {
@@ -114,18 +120,24 @@ export default function App() {
       // History: rebuild the tree as it was born, instantly, so bubbles land in the right nodes.
       const head = await publicClient.getBlockNumber()
       const history = await readEvents(0n, head)
-      const all = await readNodes()
+      const net = await readNetwork()
+      const all = net.nodes
       if (cancelled) return // React dev mode mounts twice; only the live mount draws
       nodesRef.current = all
       setNodes(all)
       setFeed([...history].reverse().slice(0, 200))
       replay(field, all, history)
       field.sync(all)
+      field.setLinks(net.links)
+      setLinks(net.links)
       cursor = head + 1n
       field.start()
       if (import.meta.env.DEV) (window as unknown as { __field: Field }).__field = field
       setOdds(await splitOdds())
+      setLim(await readLimits())
+      setDialsState(await readDials())
       await refreshMine(all)
+      let lastLinks = 0
 
       while (!cancelled) {
         try {
@@ -133,16 +145,24 @@ export default function App() {
           if (tip >= cursor) {
             const events = await readEvents(cursor, tip)
             cursor = tip + 1n
-            if (events.length) {
-              const fresh = await readNodes()
+            // loans also end on their own at their due time, with no event: re-read every few seconds
+            const stale = Date.now() - lastLinks > 4000
+            if (events.length || stale) {
+              lastLinks = Date.now()
+              const net = await readNetwork()
+              const fresh = net.nodes
               nodesRef.current = fresh
               setNodes(fresh)
-              setFeed(f => [...[...events].reverse(), ...f].slice(0, 200))
+              const shown = events.filter(e => e.kind !== 'repay')
+              if (shown.length) setFeed(f => [...[...shown].reverse(), ...f].slice(0, 200))
               // children of a split must exist (as pending) before their own deposits land
-              field.apply(events.filter(e => e.kind !== 'split'))
+              field.apply(events.filter(e => e.kind !== 'split' && e.kind !== 'loan'))
               field.apply(events.filter(e => e.kind === 'split'))
               field.sync(fresh)
-              await refreshMine(fresh)
+              field.apply(events.filter(e => e.kind === 'loan'))
+              field.setLinks(net.links)
+              setLinks(net.links)
+              if (events.length) await refreshMine(fresh)
             }
             setBlock(tip)
           }
@@ -290,6 +310,7 @@ export default function App() {
           tab={tab} setTab={setTab} sheet={sheet} setSheet={setSheet} narrow={narrow}
           nodes={nodes} feed={feed} you={you.address} selected={sel} claims={claims}
           fees={fees} odds={odds} wallet={wallet} busy={busy} amount={amount} setAmount={setAmount}
+          links={links} limits={lim} heldNet={heldNet}
           onSelect={id => { select(id); fieldRef.current?.focus(id) }}
           onFocus={id => fieldRef.current?.focus(id)}
           onDeposit={() => sel && act('deposit', () => deposit(sel.id, units))}
@@ -299,6 +320,14 @@ export default function App() {
           colorsOf={id => fieldRef.current?.colorsOf(id)}
         />
       )}
+
+      <TestDials
+        dials={dials}
+        onChange={d => {
+          setDialsState(d)
+          setDials(d).catch(e => { setError(friendly(e)); setTimeout(() => setError(null), 5000) })
+        }}
+      />
 
       {error && <div className="toast">{error}</div>}
     </div>
@@ -311,6 +340,8 @@ function friendly(e: unknown): string {
   if (/HTTP request failed|fetch|network|Failed to fetch|timed? ?out/i.test(m)) return 'Connection lost. Nothing was sent. Try again in a moment.'
   if (/insufficient|exceeds balance/i.test(m)) return 'Not enough USDC in your wallet.'
   if (/rejected|denied/i.test(m)) return 'Cancelled.'
+  if (/AboveMaxDeposit/.test(m)) return 'The most you can deposit at once is 1,000 USDC.'
+  if (/AboveUserLimit/.test(m)) return 'You can hold at most 1,000 USDC in the network.'
   if (/revert/i.test(m)) return 'The network refused this. Nothing was sent.'
   return m.split('\n')[0].slice(0, 120)
 }

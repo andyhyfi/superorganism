@@ -4,6 +4,7 @@ pragma solidity 0.8.30;
 import {Script, console} from "forge-std/Script.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {Evolution} from "../src/Evolution.sol";
+import {EvolutionDemo} from "../src/mocks/EvolutionDemo.sol";
 import {MockUSDC} from "../src/mocks/MockUSDC.sol";
 
 /// @notice Local chain only (anvil, chain ID 31337). Deploys mock USDC and Evolution with the
@@ -18,6 +19,21 @@ contract DeployLocal is Script {
     uint32 internal constant FEE_PPM = 1; // 0.0001%
     uint32 internal constant ROLL_CAP_PPM = 100_000; // 10%
     uint128 internal constant ROLL_MID_FILL = 300e6; // 300 USDC
+
+    // Loan rules (Andy, 2026-11-05): a deposit starts a loan event 15% of the time, loans last
+    // 5 to 60 minutes, one loan out per node. Limits: 1,000 USDC per deposit and per user.
+    uint32 internal constant EVENT_CHANCE_PPM = 150_000;
+    uint32 internal constant LOAN_MIN_SECS = 5 minutes;
+    uint32 internal constant LOAN_MAX_SECS = 60 minutes;
+    uint8 internal constant LOANS_OUT_CAP = 1;
+    uint256 internal constant MAX_DEPOSIT = 1_000e6;
+    uint256 internal constant MAX_PER_USER = 1_000e6;
+    // The depositor pays the random-number fee. Gelato's price is not known yet; 0.01 USDC is a
+    // local placeholder.
+    uint256 internal constant EVENT_FEE = 10_000;
+    // Account 11 of the test mnemonic plays the randomness operator on the local chain
+    // (scripts/activity.mjs answers each request). On Ink this is the Gelato VRF operator.
+    uint32 internal constant OPERATOR_INDEX = 11;
 
     uint256 internal constant ACCOUNTS = 10;
     uint256 internal constant FUND = 100_000e6;
@@ -48,14 +64,22 @@ contract DeployLocal is Script {
 
         vm.startBroadcast(deployerKey);
         MockUSDC usdc = new MockUSDC();
-        Evolution evo = new Evolution(
-            IERC20(address(usdc)),
-            deployer, // treasury: the deployer, local only
-            MIN_DEPOSIT,
-            MIN_WITHDRAW,
-            SPLIT_UNIT,
-            splits ? SPLITS_SPLIT_ODDS : demo ? DEMO_SPLIT_ODDS : SPLIT_ODDS,
-            Evolution.Traits(FEE_PPM, 0, ROLL_CAP_PPM, splits ? SPLITS_MID_FILL : demo ? DEMO_MID_FILL : ROLL_MID_FILL)
+        address operator = vm.addr(vm.deriveKey(MNEMONIC, OPERATOR_INDEX));
+        EvolutionDemo evo = new EvolutionDemo(
+            Evolution.Config({
+                token: IERC20(address(usdc)),
+                treasury: deployer, // local only; Andy's treasury fund on testnet and mainnet
+                operator: operator,
+                minDeposit: MIN_DEPOSIT,
+                minWithdraw: MIN_WITHDRAW,
+                maxDeposit: MAX_DEPOSIT,
+                maxPerUser: MAX_PER_USER,
+                eventFee: EVENT_FEE,
+                splitUnit: SPLIT_UNIT,
+                splitOdds: splits ? SPLITS_SPLIT_ODDS : demo ? DEMO_SPLIT_ODDS : SPLIT_ODDS
+            }),
+            Evolution.Traits(FEE_PPM, 0, ROLL_CAP_PPM, splits ? SPLITS_MID_FILL : demo ? DEMO_MID_FILL : ROLL_MID_FILL),
+            Evolution.LoanRules(EVENT_CHANCE_PPM, LOAN_MIN_SECS, LOAN_MAX_SECS, LOANS_OUT_CAP)
         );
         for (uint256 i = 0; i < ACCOUNTS; ++i) {
             usdc.mint(vm.addr(vm.deriveKey(MNEMONIC, uint32(i))), FUND);
@@ -77,6 +101,7 @@ contract DeployLocal is Script {
         vm.serializeString(obj, "preset", splits ? "splits" : demo ? "demo" : "real");
         vm.serializeAddress(obj, "usdc", address(usdc));
         vm.serializeAddress(obj, "treasury", deployer);
+        vm.serializeAddress(obj, "operator", operator);
         string memory json = vm.serializeAddress(obj, "evolution", address(evo));
         vm.writeJson(json, "deployments/local.json");
 

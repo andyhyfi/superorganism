@@ -75,23 +75,73 @@ contract EvolutionUnitTest is Test {
 
     function test_constructor_rejectsBadInputs() public {
         Evolution.Traits memory ok = _traits();
+        Evolution.LoanRules memory rules = _rules();
         IERC20 t = IERC20(address(usdc));
+        Evolution.Config memory c = _config(t);
+        c.token = IERC20(address(0));
         vm.expectRevert(Evolution.ZeroAddress.selector);
-        new Evolution(IERC20(address(0)), TREASURY, 1, 1, SPLIT_UNIT, ODDS, ok);
+        new Evolution(c, ok, rules);
+        c = _config(t);
+        c.treasury = address(0);
         vm.expectRevert(Evolution.ZeroAddress.selector);
-        new Evolution(t, address(0), 1, 1, SPLIT_UNIT, ODDS, ok);
+        new Evolution(c, ok, rules);
+        c = _config(t);
+        c.operator = address(0);
+        vm.expectRevert(Evolution.ZeroAddress.selector);
+        new Evolution(c, ok, rules);
+        c = _config(t);
+        c.splitUnit = 0;
         vm.expectRevert(Evolution.InvalidSplitUnit.selector);
-        new Evolution(t, TREASURY, 1, 1, 0, ODDS, ok);
+        new Evolution(c, ok, rules);
+        c = _config(t);
+        c.splitOdds = 0;
         vm.expectRevert(Evolution.InvalidSplitOdds.selector);
-        new Evolution(t, TREASURY, 1, 1, SPLIT_UNIT, 0, ok);
+        new Evolution(c, ok, rules);
+        c = _config(t);
+        c.maxDeposit = 0;
+        vm.expectRevert(Evolution.InvalidLimits.selector);
+        new Evolution(c, ok, rules);
+        c = _config(t);
         vm.expectRevert(Evolution.InvalidTraits.selector);
-        new Evolution(t, TREASURY, 1, 1, SPLIT_UNIT, ODDS, Evolution.Traits(10_001, 0, CAP_PPM, MID_FILL));
+        new Evolution(c, Evolution.Traits(10_001, 0, CAP_PPM, MID_FILL), rules);
         vm.expectRevert(Evolution.InvalidTraits.selector);
-        new Evolution(t, TREASURY, 1, 1, SPLIT_UNIT, ODDS, Evolution.Traits(FEE_PPM, 1, CAP_PPM, MID_FILL));
+        new Evolution(c, Evolution.Traits(FEE_PPM, 1, CAP_PPM, MID_FILL), rules);
         vm.expectRevert(Evolution.InvalidTraits.selector);
-        new Evolution(t, TREASURY, 1, 1, SPLIT_UNIT, ODDS, Evolution.Traits(FEE_PPM, 0, 100_001, MID_FILL));
+        new Evolution(c, Evolution.Traits(FEE_PPM, 0, 100_001, MID_FILL), rules);
         vm.expectRevert(Evolution.InvalidTraits.selector);
-        new Evolution(t, TREASURY, 1, 1, SPLIT_UNIT, ODDS, Evolution.Traits(FEE_PPM, 0, CAP_PPM, 0));
+        new Evolution(c, Evolution.Traits(FEE_PPM, 0, CAP_PPM, 0), rules);
+        Evolution.LoanRules[5] memory bad = [
+            Evolution.LoanRules(500_001, 300, 3600, 1),
+            Evolution.LoanRules(150_000, 59, 3600, 1),
+            Evolution.LoanRules(150_000, 300, 1 days + 1, 1),
+            Evolution.LoanRules(150_000, 3600, 300, 1),
+            Evolution.LoanRules(150_000, 300, 3600, 5)
+        ];
+        for (uint256 i = 0; i < bad.length; ++i) {
+            vm.expectRevert(Evolution.InvalidLoanRules.selector);
+            new Evolution(c, ok, bad[i]);
+        }
+        vm.expectRevert(Evolution.InvalidLoanRules.selector);
+        new Evolution(c, ok, Evolution.LoanRules(150_000, 300, 3600, 0));
+    }
+
+    function _rules() internal pure returns (Evolution.LoanRules memory) {
+        return Evolution.LoanRules(150_000, 5 minutes, 60 minutes, 1);
+    }
+
+    function _config(IERC20 t) internal pure returns (Evolution.Config memory) {
+        return Evolution.Config({
+            token: t,
+            treasury: TREASURY,
+            operator: address(0x0FE7),
+            minDeposit: 1,
+            minWithdraw: 1,
+            maxDeposit: 1_000e6,
+            maxPerUser: 1_000e6,
+            eventFee: 0,
+            splitUnit: SPLIT_UNIT,
+            splitOdds: ODDS
+        });
     }
 
     // ------------------------------------------------------------ deposit

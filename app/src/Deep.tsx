@@ -3,7 +3,7 @@
 // buttons, sentence case. Tabs live in Tabs.tsx.
 import { X } from 'lucide-react'
 import type { Address } from 'viem'
-import type { ChainNode, NetEvent } from './chain'
+import type { ChainNode, LoanLink, NetEvent } from './chain'
 import { NodeTab, NetworkTab, YoursTab, FeedTab } from './Tabs'
 import { attachSheetDrag } from './sheetDrag'
 import { useEffect, useRef } from 'react'
@@ -13,7 +13,9 @@ import './cell.css'
 
 export type Tab = 'node' | 'network' | 'yours' | 'feed'
 export type Sheet = 'peek' | 'half' | 'full'
-export type SelectedInfo = { id: number; total: bigint; claim: bigint; roll: bigint; split: bigint }
+export type SelectedInfo = {
+  id: number; total: bigint; energy: bigint; lent: bigint; borrowed: bigint; claim: bigint; roll: bigint; split: bigint
+}
 
 export type DeepProps = {
   tab: Tab
@@ -39,6 +41,9 @@ export type DeepProps = {
   onWithdrawAll: () => void
   onClose: () => void
   colorsOf: (id: number) => { dark: string; light: string; core: string; rim: string } | undefined
+  links: LoanLink[]
+  limits: { maxDeposit: bigint; maxPerUser: bigint; eventFee: bigint }
+  heldNet: bigint
 }
 
 const TABS: { id: Tab; label: string }[] = [

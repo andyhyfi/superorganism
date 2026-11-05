@@ -1,7 +1,7 @@
 // The four Deep tabs. Words come from reveal.ts (t), and every optional section asks shown()
 // first, so what a player sees can be gated by holdings, deposits, or mutations.
 import { useState, type ReactNode } from 'react'
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Inbox, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Inbox, Spline, X } from 'lucide-react'
 import type { DeepProps } from './Deep'
 import { cleanAmount, fmtPct, fmtUsd, fromUnits, short, toUnits } from './format'
 import { shown, t, type Ctx, type InfoId } from './reveal'
@@ -39,10 +39,16 @@ export function NodeTab(p: DeepProps) {
   lineage.unshift(0)
   const [side, setSide] = useState<'deposit' | 'withdraw'>('deposit')
   const out = side === 'withdraw'
-  const limit = out ? s.claim : p.wallet
+  // deposits: at most the wallet, the per-deposit limit, and the room left under the per-user limit
+  const room = p.limits.maxPerUser > p.heldNet ? p.limits.maxPerUser - p.heldNet : 0n
+  const capIn = [p.wallet, p.limits.maxDeposit || p.wallet, p.limits.maxPerUser ? room : p.wallet].reduce((a, b) => (b < a ? b : a))
+  const limit = out ? s.claim : capIn
   const units = toUnits(p.amount)
   const tooSmall = units > 0n && units < 1_000_000n && !(out && units === s.claim)
   const tooBig = units > limit
+  const overReason = out ? t('act.overClaim') : units > p.wallet ? t('act.overWallet') : p.limits.maxDeposit && units > p.limits.maxDeposit ? t('act.overDeposit') : t('act.overUser')
+  const loansHere = p.links.filter(l => l.holder === s.id || l.lender === s.id)
+  const now = Date.now() / 1000
   const amountOk = units > 0n && !tooSmall && !tooBig
   // +10 / +50 / +100 add to what is there; capped at what you can move
   const add = (v: number) => {
@@ -57,7 +63,7 @@ export function NodeTab(p: DeepProps) {
           <span>{t('cell.balance')}</span>
           <button className="text-btn" onClick={() => p.onFocus(s.id)}>{t('cell.showOnMap')}</button>
         </div>
-        <div className="big">{fmtUsd(s.total)}<small>USDC</small></div>
+        <div className="big">{fmtUsd(s.energy)}<small>{t('cell.energyUnit')}</small></div>
         <Gate id="cell.yourShare" c={c}>
           <div className="meta">{t('cell.yourShare')} <span className="gold">{fmtUsd(s.claim)}</span></div>
         </Gate>
@@ -74,7 +80,8 @@ export function NodeTab(p: DeepProps) {
         {units > 0n && <button className="clear" aria-label={t('act.clear')} onClick={() => p.setAmount('')}><X size={14} strokeWidth={2.5} /></button>}
       </div>
       {out && s.claim === 0n && <p className="hint">{t('act.nothingHere')}</p>}
-      {(tooSmall || tooBig) && <p className="hint-err">{tooSmall ? t('act.belowMin') : out ? t('act.overClaim') : t('act.overWallet')}</p>}
+      {(tooSmall || tooBig) && <p className="hint-err">{tooSmall ? t('act.belowMin') : overReason}</p>}
+      {out && s.lent > 0n && <p className="hint">{t('act.withdrawRecalls')}</p>}
       <div className="quick">
         {[10, 50, 100].map(v => <button key={v} className="cell-quiet" disabled={units >= limit} onClick={() => add(v)}>+{v}</button>)}
         <button className="cell-quiet" disabled={limit === 0n} aria-pressed={units === limit && limit > 0n} onClick={() => p.setAmount(fromUnits(limit))}>{t('act.max')}</button>
@@ -101,11 +108,38 @@ export function NodeTab(p: DeepProps) {
         <Gate id="cell.divideExplainer" c={c}><p className="foot">{t('cell.divideExplainer')}</p></Gate>
       </Gate>
 
+      {loansHere.length > 0 && (
+        <>
+          <div className="section-title">{t('cell.loans')}</div>
+          <div className="group membrane">
+            {loansHere.map(l => {
+              const lending = l.lender === s.id
+              const other = lending ? l.holder : l.lender
+              const mins = Math.max(0, Math.ceil((l.due - now) / 60))
+              return (
+                <button key={`${l.loanId}:${l.holder}`} className="cell" onClick={() => p.onSelect(other)}>
+                  <Orb colors={p.colorsOf(other)} />
+                  <span className="k">
+                    {lending ? t('cell.lentTo') : t('cell.borrowedFrom')} {t('you.cell').toLowerCase()} {other}
+                    <span className="sub">{t('cell.returnsIn')} {mins} min</span>
+                  </span>
+                  <span className={lending ? 'v' : 'v strong'}>{lending ? '−' : '+'}{fmtUsd(l.amount)}</span>
+                </button>
+              )
+            })}
+          </div>
+          <p className="foot">{t('cell.loansExplainer')}</p>
+        </>
+      )}
+
       <div className="section-title">&nbsp;</div>
       <div className="group membrane">
+        <Row k={t('cell.deposits')} v={`${fmtUsd(s.total)} USDC`} />
         <Gate id="cell.generation" c={c}><Row k={t('cell.generation')} v={String(node?.depth ?? 0)} /></Gate>
         <Row k={t('cell.fee')} v={`${((node?.traits.feePpm ?? 0) / 1e4).toFixed(4)}%`} />
         <Row k={t('cell.minimum')} v="1 USDC" />
+        {p.limits.maxDeposit > 0n && <Row k={t('cell.maximum')} v={`${fmtUsd(p.limits.maxDeposit)} USDC`} />}
+        {p.limits.eventFee > 0n && <Row k={t('cell.eventFee')} v={`${fmtUsd(p.limits.eventFee)} USDC`} />}
       </div>
 
       <Gate id="cell.lineage" c={c}>
@@ -237,11 +271,23 @@ export function FeedTab(p: DeepProps) {
   const c = playerCtx(p)
   const me = p.you.toLowerCase()
   const others = shown('feed.others', c)
-  const rows = p.feed.filter(e => others || (e.kind !== 'split' && e.user.toLowerCase() === me)).slice(0, 80)
+  const rows = p.feed
+    .filter(e => e.kind !== 'repay')
+    .filter(e => others || ((e.kind === 'deposit' || e.kind === 'withdraw') && e.user.toLowerCase() === me))
+    .slice(0, 80)
   if (!rows.length) return <Empty title={t('feed.empty')} text="" />
   return (
     <div className="group membrane" style={{ marginTop: 8 }}>
       {rows.map(e => {
+        if (e.kind === 'loan') {
+          return (
+            <button key={e.key} className="cell" onClick={() => !p.nodes[e.borrower]?.split && p.onSelect(e.borrower)}>
+              <span className="badge split"><Spline size={16} strokeWidth={2.25} /></span>
+              <span className="k">{t('feed.loan')}<span className="sub">{`${e.lender} → ${e.borrower}`}</span></span>
+              <span className="v">{fmtUsd(e.amount)}</span>
+            </button>
+          )
+        }
         const target = e.kind === 'split' ? e.c0 : e.node
         const mine = e.kind !== 'split' && e.user.toLowerCase() === me
         return (

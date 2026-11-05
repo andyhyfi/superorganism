@@ -2,7 +2,7 @@
 // (PixiJS / WebGL, baked textures) so phones stay smooth. Look ported from the approved look test
 // (private/sketches/look-test.html, look A). Chain state drives it; it never invents nodes.
 import type { Address } from 'viem'
-import type { ChainNode, NetEvent } from './chain'
+import type { ChainNode, LoanLink, NetEvent } from './chain'
 import { Painter, hsl } from './painter'
 import { SPECIES, hex, speciesOf } from './species'
 
@@ -68,6 +68,20 @@ type VNode = {
 
 export type Pick = { id: number; total: number } | null
 
+/** A burst of energy travelling between two cells: a loan going out, or coming home. */
+type Flow = { from: number; to: number; p: number; dur: number; sp: number; bow: number; size: number }
+
+// Energy loans on screen. A loan is a faint filament from lender to borrower with specks drifting
+// along it; a new loan and a repayment are a burst of specks travelling the filament.
+const LOANS = {
+  filament: 0.16, // brightness of the thread between two cells
+  drift: 0.09, // how fast the specks along a thread travel (lengths per second)
+  specks: 4, // specks along each thread
+  burst: 10, // specks in a send or a return
+  burstSeconds: 1.8, // how long a send or a return takes to cross
+  bow: 0.18, // how far the thread curves out of a straight line
+}
+
 export class Field {
   private paint: Painter
   private W = 0
@@ -95,6 +109,8 @@ export class Field {
   private you: string
   selected: number | null = null
   onFrame: (() => void) | null = null
+  private links: LoanLink[] = []
+  private flows: Flow[] = []
 
   constructor(private host: HTMLElement, you: Address) {
     this.paint = new Painter(host)
@@ -143,7 +159,8 @@ export class Field {
   sync(chain: ChainNode[]) {
     for (const c of chain) {
       const v = this.nodes.get(c.id)
-      const total = Number(c.total) / 1e6
+      // a cell shows its energy: own deposits not lent out, plus energy borrowed from other cells
+      const total = Number(c.energy) / 1e6
       const mid = Number(c.traits.rollMidFill) / 1e6
       if (c.split) {
         // A split node lives on screen only while its division animates.
@@ -160,6 +177,28 @@ export class Field {
         this.nodes.set(c.id, this.makeNode(c, chain, total, mid))
       }
     }
+  }
+
+  /** Active loans, from chain. A loan that disappears (repaid, or due) sends its energy home. */
+  setLinks(links: LoanLink[]) {
+    const key = (l: LoanLink) => `${l.loanId}:${l.holder}`
+    const next = new Set(links.map(key))
+    const stillOut = new Set(links.map(l => l.loanId))
+    for (const l of this.links) {
+      if (next.has(key(l)) || stillOut.has(l.loanId)) continue // unchanged, or moved into a split's children
+      this.flow(l.holder, l.lender, Number(l.amount) / 1e6)
+    }
+    this.links = links
+  }
+
+  private flow(from: number, to: number, amount: number) {
+    const a = this.nodes.get(from), b = this.nodes.get(to)
+    if (!a || !b || from === to) return
+    this.flows.push({
+      from, to, p: 0, dur: LOANS.burstSeconds, sp: a.sp,
+      bow: (from < to ? 1 : -1) * LOANS.bow, size: 1.4 + Math.sqrt(amount) * 0.22,
+    })
+    if (this.flows.length > 40) this.flows.shift()
   }
 
   /** Feeds contract events. `instant` skips animation (used when loading history). */
@@ -189,6 +228,8 @@ export class Field {
         if (!n) continue
         if (instant) this.finishSplit(n, rand(0, TAU), e.c0, e.c1)
         else if (!n.splitting) n.splitting = { ang: rand(0, TAU), p: 0, c0: e.c0, c1: e.c1 }
+      } else if (e.kind === 'loan' && !instant) {
+        this.flow(e.lender, e.borrower, Number(e.amount) / 1e6)
       }
     }
   }
@@ -401,6 +442,8 @@ export class Field {
         if (n.splitting.p >= 1) this.finishSplit(n, n.splitting.ang, n.splitting.c0, n.splitting.c1)
       }
     }
+    for (const f of this.flows) f.p += dt / f.dur
+    this.flows = this.flows.filter(f => f.p < 1 + 0.5) // the last specks arrive half a crossing later
     this.updateCamera(dt)
   }
 
@@ -668,6 +711,51 @@ export class Field {
     )
   }
 
+  /** A point on the curved thread from cell a to cell b, membrane to membrane. q runs 0 to 1. */
+  private threadAt(a: VNode, b: VNode, bow: number, q: number): [number, number] {
+    const [ax, ay] = this.toScreen(a.x, a.y), [bx, by] = this.toScreen(b.x, b.y)
+    const z = this.cam.z, dx = bx - ax, dy = by - ay, d = Math.hypot(dx, dy) || 1
+    const ux = dx / d, uy = dy / d
+    const sx = ax + ux * a.r * z, sy = ay + uy * a.r * z
+    const ex = bx - ux * b.r * z, ey = by - uy * b.r * z
+    const cx = (sx + ex) / 2 - uy * d * bow, cy = (sy + ey) / 2 + ux * d * bow
+    const m = 1 - q
+    return [m * m * sx + 2 * m * q * cx + q * q * ex, m * m * sy + 2 * m * q * cy + q * q * ey]
+  }
+
+  private drawLoans() {
+    const { paint } = this
+    const scale = Math.max(0.6, Math.min(1.6, this.cam.z))
+    for (const l of this.links) {
+      const a = this.nodes.get(l.lender), b = this.nodes.get(l.holder)
+      if (!a || !b || a.splitting || b.splitting) continue
+      const amount = Number(l.amount) / 1e6
+      const bow = (l.loanId % 2 ? 1 : -1) * LOANS.bow
+      const rim = hex(SPECIES[a.sp].rim), speck = hex(SPECIES[a.sp].speck)
+      const pts: number[] = []
+      for (let i = 0; i <= 24; i++) pts.push(...this.threadAt(a, b, bow, i / 24))
+      paint.line(pts, rim, LOANS.filament * Math.min(1, 0.4 + amount / 60), 1.2)
+      for (let k = 0; k < LOANS.specks; k++) {
+        const q = (this.t * LOANS.drift + k / LOANS.specks + l.loanId * 0.37) % 1
+        const [x, y] = this.threadAt(a, b, bow, q)
+        const fade = Math.sin(q * Math.PI)
+        paint.speck(x, y, (1.2 + Math.sqrt(amount) * 0.18) * scale, speck, 0.55 * fade)
+      }
+    }
+    for (const f of this.flows) {
+      const a = this.nodes.get(f.from), b = this.nodes.get(f.to)
+      if (!a || !b) continue
+      const speck = hex(SPECIES[f.sp].core)
+      for (let k = 0; k < LOANS.burst; k++) {
+        const q = f.p - (k / LOANS.burst) * 0.5
+        if (q <= 0 || q >= 1) continue
+        const e = ease(q)
+        const [x, y] = this.threadAt(a, b, f.bow, e)
+        paint.speck(x, y, f.size * scale * (1 - k / (LOANS.burst * 1.6)), speck, 0.85 * Math.sin(q * Math.PI))
+      }
+    }
+  }
+
   /** Dev: draw one frame now and wait for the GPU (for timing). */
   benchFrame() {
     this.t += 1 / 60
@@ -679,6 +767,7 @@ export class Field {
   private render() {
     if (!this.paint.isReady) return
     this.background()
+    this.drawLoans()
     const z = this.cam.z
     for (const n of this.nodes.values()) {
       const [x, y] = this.toScreen(n.x, n.y)

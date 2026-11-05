@@ -84,6 +84,28 @@ contract EvolutionInvariantTest is Test {
         }
     }
 
+    /// Loans: energy lent out of live nodes equals energy borrowed by live nodes, exactly.
+    function invariant_loansBalance() public view {
+        uint256[] memory live = evo.liveNodes();
+        uint256 lent = 0;
+        uint256 borrowed = 0;
+        for (uint256 i = 0; i < live.length; ++i) {
+            (, uint256 l, uint256 b,) = evo.energyOf(live[i]);
+            lent += l;
+            borrowed += b;
+        }
+        assertEq(lent, borrowed);
+    }
+
+    /// Every live node is in the live list exactly once.
+    function invariant_liveListMatchesTree() public view {
+        uint256 count = 0;
+        for (uint256 i = 0; i < evo.nodeCount(); ++i) {
+            if (!evo.getNode(i).split) ++count;
+        }
+        assertEq(evo.liveNodes().length, count);
+    }
+
     /// Structure: children point at their parent, sit one level deeper, and copy its traits.
     function invariant_treeIsConsistent() public view {
         uint256 n = evo.nodeCount();
@@ -117,6 +139,9 @@ contract EvolutionInvariantTest is Test {
             assertEq(_claimsOf(actors[a]), 0, "claim left after full withdrawal");
         }
         if (evo.feesAccrued() > 0) evo.sweepFees();
+        emit log_named_uint("loan events", handler.events());
+        emit log_named_uint("loans made", handler.loans());
+        emit log_named_uint("nodes", n);
 
         uint256 left = usdc.balanceOf(address(evo));
         assertEq(left, _liveTotals(), "balance differs from unowned fill");

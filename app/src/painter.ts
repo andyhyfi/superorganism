@@ -150,6 +150,11 @@ export class Painter {
     s.position.set(x, y); s.width = s.height = radius * 2; s.tint = color; s.alpha = alpha
   }
 
+  /** An open line through the points (a loan thread). */
+  line(pts: number[], color: number, alpha: number, width: number) {
+    this.lines.poly(pts, false).stroke({ width, color, alpha })
+  }
+
   outline(pts: number[], color: number, alpha: number, width: number) {
     this.lines.poly(pts, true).stroke({ width, color, alpha })
   }

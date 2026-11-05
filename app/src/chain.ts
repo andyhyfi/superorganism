@@ -29,20 +29,31 @@ export const publicClient = createPublicClient({ chain: foundry, transport: http
 const wallet = createWalletClient({ account: you, chain: foundry, transport: http(RPC) })
 
 export type Traits = { feePpm: number; rollCapPpm: number; rollMidFill: bigint }
+export type LoanRules = { eventChancePpm: number; loanMinSecs: number; loanMaxSecs: number; loansOutCap: number }
 export type ChainNode = {
   id: number
   parent: number
   firstChild: number
   depth: number
   split: boolean
-  total: bigint
+  total: bigint // own energy: user claims plus rounding fill (real USDC)
   traits: Traits
+  loanRules: LoanRules
+  lent: bigint // energy out on loan (no USDC moves)
+  borrowed: bigint // energy held on loan from other cells
+  energy: bigint // what the cell shows: own not lent out, plus borrowed
+  rollFill: bigint // what the split roll uses: borrowed counts up to the cell's own (at most 50%)
 }
+
+/** One active loan part: energy from `lender` now held by `holder`. */
+export type LoanLink = { loanId: number; lender: number; holder: number; amount: bigint; due: number }
 
 export type NetEvent =
   | { kind: 'deposit'; node: number; user: Address; amount: bigint; key: string; block: bigint }
   | { kind: 'withdraw'; node: number; user: Address; amount: bigint; key: string; block: bigint }
   | { kind: 'split'; parent: number; c0: number; c1: number; key: string; block: bigint }
+  | { kind: 'loan'; loanId: number; lender: number; borrower: number; amount: bigint; due: number; key: string; block: bigint }
+  | { kind: 'repay'; loanId: number; lender: number; key: string; block: bigint }
 
 export async function assertLocalChain() {
   const id = await publicClient.getChainId()
@@ -51,21 +62,51 @@ export async function assertLocalChain() {
   if (!code || code === '0x') throw new Error('No contract at the saved address. Restart ./local.sh, then npm run abi.')
 }
 
+/** Every node, with its loan energy, plus the active loan links between live nodes. */
 export async function readNodes(): Promise<ChainNode[]> {
+  return (await readNetwork()).nodes
+}
+
+export async function readNetwork(): Promise<{ nodes: ChainNode[]; links: LoanLink[] }> {
   const count = Number(await publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'nodeCount' }))
   const ids = Array.from({ length: count }, (_, i) => i)
   const raw = await Promise.all(
     ids.map(id => publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'getNode', args: [BigInt(id)] })),
   )
-  return raw.map((n, id) => ({
-    id,
-    parent: Number(n.parent),
-    firstChild: Number(n.firstChild),
-    depth: Number(n.depth),
-    split: n.split,
-    total: n.total,
-    traits: { feePpm: Number(n.traits.feePpm), rollCapPpm: Number(n.traits.rollCapPpm), rollMidFill: n.traits.rollMidFill },
+  const liveIds = ids.filter(id => !raw[id].split)
+  const parts = await Promise.all(
+    liveIds.map(id => publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'loansIn', args: [BigInt(id)] })),
+  )
+  const links: LoanLink[] = parts.flat().map(l => ({
+    loanId: Number(l.loanId), lender: Number(l.lender), holder: Number(l.holder), amount: l.amount, due: Number(l.due),
   }))
+  const lent = new Map<number, bigint>(), borrowed = new Map<number, bigint>()
+  for (const l of links) {
+    lent.set(l.lender, (lent.get(l.lender) ?? 0n) + l.amount)
+    borrowed.set(l.holder, (borrowed.get(l.holder) ?? 0n) + l.amount)
+  }
+  const nodes = raw.map((n, id) => {
+    const out = lent.get(id) ?? 0n, inn = borrowed.get(id) ?? 0n
+    const base = n.total > out ? n.total - out : 0n
+    return {
+      id,
+      parent: Number(n.parent),
+      firstChild: Number(n.firstChild),
+      depth: Number(n.depth),
+      split: n.split,
+      total: n.total,
+      traits: { feePpm: Number(n.traits.feePpm), rollCapPpm: Number(n.traits.rollCapPpm), rollMidFill: n.traits.rollMidFill },
+      loanRules: {
+        eventChancePpm: Number(n.loanRules.eventChancePpm), loanMinSecs: Number(n.loanRules.loanMinSecs),
+        loanMaxSecs: Number(n.loanRules.loanMaxSecs), loansOutCap: Number(n.loanRules.loansOutCap),
+      },
+      lent: out,
+      borrowed: inn,
+      energy: base + inn,
+      rollFill: base + (inn < base ? inn : base),
+    }
+  })
+  return { nodes, links }
 }
 
 /** All contract events in [from, to], in chain order. */
@@ -83,6 +124,13 @@ export async function readEvents(from: bigint, to: bigint): Promise<NetEvent[]> 
       out.push({ kind: 'withdraw', node: Number(l.args.nodeId), user: l.args.user, amount: l.args.amount, key, block })
     } else if (l.eventName === 'Split') {
       out.push({ kind: 'split', parent: Number(l.args.parentId), c0: Number(l.args.child0), c1: Number(l.args.child1), key, block })
+    } else if (l.eventName === 'LoanMade') {
+      out.push({
+        kind: 'loan', loanId: Number(l.args.loanId), lender: Number(l.args.lender), borrower: Number(l.args.borrower),
+        amount: l.args.amount, due: Number(l.args.due), key, block,
+      })
+    } else if (l.eventName === 'LoanRepaid') {
+      out.push({ kind: 'repay', loanId: Number(l.args.loanId), lender: Number(l.args.lender), key, block })
     }
   }
   return out
@@ -106,6 +154,38 @@ export async function chancesAt(node: number, fill: bigint): Promise<{ roll: big
     publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'splitChance', args: [BigInt(node), fill] }),
   ])
   return { roll, split }
+}
+
+/** Deposit limits and the loan event fee, fixed at deployment. */
+export async function limits(): Promise<{ maxDeposit: bigint; maxPerUser: bigint; eventFee: bigint }> {
+  const [maxDeposit, maxPerUser, eventFee] = await Promise.all([
+    publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'maxDeposit' }),
+    publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'maxPerUser' }),
+    publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'eventFee' }),
+  ])
+  return { maxDeposit, maxPerUser, eventFee }
+}
+
+/** What you hold in the contract, net of fees, for the per-user limit. */
+export async function yourHeld(): Promise<bigint> {
+  return publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'heldOf', args: [you.address] })
+}
+
+// ---------------------------------------------------------------- test dials (local only)
+// The local deploy is EvolutionDemo: two dials anyone can set. 0 = the real rules.
+
+export type Dials = { splitPpm: number; eventPpm: number }
+
+export async function readDials(): Promise<Dials> {
+  const [a, b] = await Promise.all([
+    publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'demoSplitPpm' }),
+    publicClient.readContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'demoEventPpm' }),
+  ])
+  return { splitPpm: Number(a), eventPpm: Number(b) }
+}
+
+export async function setDials(d: Dials) {
+  await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'setDemoDials', args: [d.splitPpm, d.eventPpm] }))
 }
 
 export async function yourWallet(): Promise<bigint> {

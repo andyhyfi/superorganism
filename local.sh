@@ -5,6 +5,8 @@
 #   PRESET=splits ./local.sh   temporary: about 1 deposit in 10 splits a cell (for testing splits)
 #   PRESET=real ./local.sh     the production rules
 #
+# The local contract is EvolutionDemo: the app's Test dials change the split and loan event chances.
+#
 # Local only: chain ID 31337 at http://127.0.0.1:8545. Every restart starts from zero.
 # The test accounts use anvil's public test mnemonic and hold only mock USDC.
 set -euo pipefail
@@ -20,7 +22,7 @@ if curl -s -o /dev/null -X POST -H 'content-type: application/json' \
   exit 1
 fi
 
-anvil --chain-id 31337 --block-time 1 --silent &
+anvil --chain-id 31337 --block-time 1 --accounts 12 --silent & # account 11 plays the randomness operator
 ANVIL=$!
 trap 'kill $ANVIL 2>/dev/null' EXIT
 

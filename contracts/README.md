@@ -20,7 +20,10 @@ slither .
   - no user gets out more than they put in;
   - every child points at its parent, sits one level deeper, and copies its traits.
   After each run every user withdraws everything; what remains must equal the unowned fill and stay under its rounding bound.
-- `test/utils/EvolutionHarness.sol`: test-only subclass that can force the split roll.
+- `test/Evolution.loans.t.sol`: energy loans, loan events, deposit limits. A differential fuzz test proves loans never change what withdrawals pay.
+- The invariant suite also runs loan events and lets time pass. After every step, energy lent out equals energy borrowed, and the live-node list matches the tree.
+- `test/utils/EvolutionHarness.sol`: test-only subclass that can force the split roll and the event roll.
+- `src/mocks/EvolutionDemo.sol`: LOCAL CHAIN ONLY. Evolution plus two test dials (split chance, event chance) that anyone can set; it refuses any chain but 31337. The production contract has no dials.
 
 ## Split and remainder logic
 
@@ -72,11 +75,25 @@ Halves round down to a multiple of `splitUnit`, set at deployment. For USDC (6 d
 - A per-node fee (parts per million, capped at 1%) applies to deposits and withdrawals.
 - Fees and split remainders accrue in `feesAccrued`. Anyone can call `sweepFees()`, and it always pays the fixed treasury address.
 
+### Energy loans
+
+Users see a cell's size as energy. Money stays in exact USDC.
+
+- **Claims never move.** A user's claim changes only through their own deposit or withdrawal, or a split that halves it into both children. Loans move no tokens and change no claim.
+- **Events.** A deposit has a chance, per cell, to start a loan event (default 15%, hard cap 50%). The depositor pays `eventFee` on top of the deposit; it goes to the treasury to pay for the random number. One request can be open at a time; an unanswered request expires after 10 minutes, so deposits and withdrawals never wait on it.
+- **Sends.** Only the fixed `operator` (Gelato VRF on Ink) can run an event, with its random number. An event makes up to 5 sends, each from a random live cell (the lender) to a different random live cell (the borrower). A send that cannot happen is skipped; the event never reverts on cell state. Each send rolls the borrower for a split.
+- **Loan size and time.** 5% to 20% of the lender's own energy not already lent. Due at a random time between `loanMinSecs` and `loanMaxSecs` (default 5 to 60 minutes; hard limits 1 minute and 1 day).
+- **Caps.** A cell lends at most `loansOutCap` loans at once (default 1, hard cap 4) and holds at most 4 loan parts.
+- **Roll fill.** The split roll uses: own energy not lent out, plus borrowed energy up to that same amount. Borrowed energy is therefore at most 50% of the roll fill.
+- **Return.** A loan ends at its due time with no transaction. It also ends early when any user withdraws from the lender (a withdrawal repays every loan out of that cell; the repay only sets flags and cannot fail), or when the lender splits.
+- **Borrower splits.** Each child gets half of each loan part it held; the first child gets the odd base unit, so parts still sum to the loan.
+- **Limits.** `maxDeposit` per deposit and `maxPerUser` per user in total (net of fees), both 1,000 USDC at deployment.
+
 ### What it does not have
 
 - No owner, admin key, or upgrade path. Rules change only by deploying a new contract.
-- No mutations in v0. Node traits (fee, fill measure, roll-chance cap and midpoint) are stored per node from day one, and children copy them.
-- The split roll uses block data as a placeholder. A depositor can predict it and cancel unwanted results. It must be replaced before real funds.
+- No mutations yet. Per-cell traits and loan rules are stored per cell and children copy them. What mutations do is not decided; they get tested after the core mechanics are built and well tested. Node traits (fee, fill measure, roll-chance cap and midpoint) are stored per node from day one, and children copy them.
+- The split roll and the event roll inside a deposit use block data as a placeholder. A depositor can predict it and cancel unwanted results. It must be replaced before real funds.
 
 ## Local test chain
 
