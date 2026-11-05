@@ -42,4 +42,13 @@ try {
     return JSON.stringify(out);
   })()`)
   console.log(out)
+  // mute: a second real click must silence everything and stop the engine
+  await evalJs(`(() => { const c=document.querySelector('.controls'); c.classList.remove('hidden'); c.style.pointerEvents='auto'; return 1 })()`)
+  for (const type of ['mousePressed', 'mouseReleased']) await send('Input.dispatchMouseEvent', { type, x: box.x, y: box.y, button: 'left', clickCount: 1 })
+  await sleep(1500)
+  console.log(await evalJs(`(async () => {
+    const s=__sound;
+    s.recent=[]; s.play('split', 0, 3); // must not sound while muted
+    return JSON.stringify({ mute: { on: s.on, state: s.ctx?.state, gain: +s.out.gain.value.toFixed(4), saved: localStorage.getItem('evolution.sound'), btn: document.querySelector('.controls [aria-pressed]')?.getAttribute('aria-label') } })
+  })()`))
 } finally { ws?.close(); proc.kill() }

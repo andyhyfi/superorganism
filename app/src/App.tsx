@@ -91,6 +91,14 @@ export default function App() {
     setMode('deep')
     setTab('node')
   }, [refreshSelected])
+  /** The selected cell split: the menu moves to its first child, keeping the tab and the amount. */
+  const carry = useCallback((id: number) => {
+    const field = fieldRef.current
+    if (field && field.screenOf(id)) field.selected = id // else the split hands it over when the halves part
+    refreshSelected(id)
+  }, [refreshSelected])
+  const carryRef = useRef(carry)
+  carryRef.current = carry
   const selectRef = useRef(select)
   selectRef.current = select
 
@@ -195,10 +203,23 @@ export default function App() {
     }
   }, [])
 
-  // keep the selected node's numbers fresh; drop it if it split
+  // a selected node that splits hands the selection to its first child: the menu follows it
+  useEffect(() => {
+    const f = fieldRef.current
+    if (!f) return
+    f.onSelectionMoved = id => carryRef.current(id)
+    return () => { f.onSelectionMoved = undefined }
+  })
+
+  // keep the selected node's numbers fresh; if it split, move to its first child
   useEffect(() => {
     if (sel == null) return
-    if (nodes[sel.id]?.split || (nodes[sel.id]?.gone && !(claims.get(sel.id) ?? 0n))) {
+    const cur = nodes[sel.id]
+    if (cur?.split && nodes[cur.firstChild] && !nodes[cur.firstChild].split) {
+      carryRef.current(cur.firstChild)
+      return
+    }
+    if (cur?.split || (cur?.gone && !(claims.get(sel.id) ?? 0n))) {
       if (fieldRef.current) fieldRef.current.selected = null
       setSel(null)
       return

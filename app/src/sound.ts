@@ -5,9 +5,9 @@
 
 const SOUND = {
   master: 0.55, // overall volume
-  ambience: 0.22, // the bed under everything (hum and pads)
+  ambience: 0.0198, // the bed under everything (hum, pads, water): two 70% cuts from the first 0.22 (Andy)
   water: 0.035, // the water noise inside the bed: kept very low and dark, so it never sounds like static
-  effects: 0.5, // events
+  effects: 0.34, // events: cut 15%, then 20%, from the first 0.5 (Andy)
   maxPerSecond: 4, // more events than this in a second are skipped (busy networks stay calm)
   reverb: 0.45, // how much of each effect goes to the water-like reverb
 }
@@ -72,12 +72,28 @@ class Sound {
     this.ambience(ctx, out, wet)
   }
 
+  private suspendTimer = 0
+
   private applyVolume() {
-    if (!this.ctx || !this.out) return
+    const ctx = this.ctx
+    if (!ctx || !this.out) return
     const audible = this.on && document.visibilityState === 'visible'
-    const t = this.ctx.currentTime
+    window.clearTimeout(this.suspendTimer)
+    if (audible && ctx.state === 'suspended') void ctx.resume()
+    const t = ctx.currentTime
     this.out.gain.cancelScheduledValues(t)
     this.out.gain.setTargetAtTime(audible ? SOUND.master : 0, t, audible ? 0.8 : 0.15)
+    // off: after the short fade, stop the audio engine completely (silent, no CPU)
+    if (!audible) this.suspendTimer = window.setTimeout(() => { if (!this.on || document.visibilityState !== 'visible') void ctx.suspend() }, 900)
+  }
+
+  /** Stops and releases the audio engine (used when the code reloads during development). */
+  close() {
+    window.clearTimeout(this.suspendTimer)
+    void this.ctx?.close()
+    this.ctx = null
+    this.out = null
+    this.fx = null
   }
 
   /** The bed: two slow detuned pads, a deep hum, and filtered noise like moving water. */
@@ -255,4 +271,14 @@ function impulse(ctx: AudioContext, seconds: number) {
 }
 
 export const sound = new Sound()
+
+// During development, editing this file loads a fresh copy. Close the old audio engine so it can
+// never keep playing out of reach of the mute button, and carry the on/off state across.
+if (import.meta.hot) {
+  if (import.meta.hot.data.wasOn) sound.setOn(true)
+  import.meta.hot.dispose(data => {
+    data.wasOn = sound.on
+    sound.close()
+  })
+}
 if (import.meta.env.DEV) (window as unknown as { __sound: Sound }).__sound = sound // for local checks

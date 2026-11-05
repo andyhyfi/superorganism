@@ -54,8 +54,10 @@ const EMPTY = 0.000001
 // Each value is the spring's stiffness; it settles in roughly 6 / value seconds.
 const CAM = {
   ease: 4.2, // manual drag/zoom catching up to where the user sent it (~1.4 s)
-  followEase: 2.8, // gliding over to a node you tapped (~2 s)
-  autoEase: 2.0, // easing back to show the whole network (~3 s)
+  followEase: 1.6, // gliding over to a node you tapped, and staying with it (~3.5 s)
+  autoEase: 1.1, // easing back to show the whole network (~5 s)
+  targetEase: 0.9, // the point the camera aims at glides too, so a target that jumps never jerks the view
+  fitEase: 0.6, // the overview frame changes slowly (splits, new and leaving cells)
   glideCarry: 0.7, // how much of a flick's speed carries on after release
   glideDecay: 2.4, // how quickly that drift slows (lower = longer glide)
 }
@@ -141,6 +143,8 @@ export class Field {
   private last = 0
   private you: string
   selected: number | null = null
+  /** Called when the selection moves on its own (a selected cell split into its first child). */
+  onSelectionMoved?: (id: number) => void
   onFrame: (() => void) | null = null
   private links: LoanLink[] = []
   private flows: Flow[] = []
@@ -406,14 +410,22 @@ export class Field {
     })
     this.nodes.delete(n.id)
     for (const k of kids) this.nodes.set(k.id, k)
-    if (this.selected === n.id) this.selected = null
-    if (this.follow === n.id) this.follow = c0 // keep following the line: first child
+    // the selection and the camera stay with the line: the first child takes over, already lit
+    if (this.selected === n.id) {
+      this.selected = c0
+      const k0 = this.nodes.get(c0)
+      if (k0) k0.lit = n.lit
+      this.onSelectionMoved?.(c0)
+    }
+    if (this.follow === n.id) this.follow = c0
   }
 
   private dishR = 0
   private outerR = 0 // the outer boundary: empty cells wait inside it
   private clusterR = 0 // the main cluster's size
   private fit = { z: 1, cx: 0, cy: 0 }
+  private fitReady = false
+  private aim: { x: number; y: number; z: number } | null = null // the smoothed point the camera springs toward
 
   /** How far a cell reaches from its center (a dividing cell is stretched along its axis). */
   private reach(n: VNode) {
@@ -580,7 +592,14 @@ export class Field {
     }
     const margin = 0.82
     const z = Math.min(1.6, (vw * margin) / (x1 - x0), (vh * margin) / (y1 - y0))
-    this.fit = { z, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }
+    const want = { z, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }
+    // the frame itself eases, so cells appearing or leaving never jolt the overview
+    if (!this.fitReady) { this.fit = want; this.fitReady = true }
+    else {
+      const k = 1 - Math.exp(-dt * CAM.fitEase)
+      this.fit = { z: Math.exp(Math.log(this.fit.z) + (Math.log(want.z) - Math.log(this.fit.z)) * k),
+        cx: this.fit.cx + (want.cx - this.fit.cx) * k, cy: this.fit.cy + (want.cy - this.fit.cy) * k }
+    }
     }
     if (this.camMode === 'manual' && this.autoReturnMs != null && performance.now() - this.lastInput > this.autoReturnMs) {
       this.camMode = 'auto'
@@ -595,6 +614,7 @@ export class Field {
         if (Math.hypot(this.glide.x, this.glide.y) * this.cam.z < 2) this.glide = { x: 0, y: 0 }
       }
       this.moveCam(this.goal.x, this.goal.y, this.goal.z, CAM.ease, dt)
+      this.aim = { x: this.cam.x, y: this.cam.y, z: this.cam.z } // later modes start from here, no jump
       return
     }
     if (this.camMode === 'follow') {
@@ -604,11 +624,24 @@ export class Field {
         this.follow = null
       } else {
         const z = this.zoomTarget ?? Math.min(4, Math.min(vw, vh) * 0.32 / Math.max(n.r, 1))
-        this.moveCam(n.x, n.y, z, CAM.followEase, dt)
+        // a split hands the camera to a child that sits elsewhere: the aim glides there
+        const a = this.smoothAim(n.x, n.y, z, dt)
+        this.moveCam(a.x, a.y, a.z, CAM.followEase, dt)
         return
       }
     }
-    this.moveCam(this.fit.cx, this.fit.cy, this.fit.z, CAM.autoEase, dt)
+    const a = this.smoothAim(this.fit.cx, this.fit.cy, this.fit.z, dt)
+    this.moveCam(a.x, a.y, a.z, CAM.autoEase, dt)
+  }
+
+  /** The aim point eases toward its target, so the camera never chases a jump. */
+  private smoothAim(x: number, y: number, z: number, dt: number) {
+    if (!this.aim) this.aim = { x: this.cam.x, y: this.cam.y, z: this.cam.z }
+    const k = 1 - Math.exp(-dt * CAM.targetEase * 3)
+    this.aim.x += (x - this.aim.x) * k
+    this.aim.y += (y - this.aim.y) * k
+    this.aim.z = Math.exp(Math.log(this.aim.z) + (Math.log(z) - Math.log(this.aim.z)) * k)
+    return this.aim
   }
 
   /** Springs the camera toward a target. Zoom moves in log space so in and out feel even. */
