@@ -88,7 +88,13 @@ export default function App() {
     window.addEventListener('resize', onResize)
 
     const detach = attachGestures(canvas, {
-      onTap: (x, y) => selectRef.current(field.pick(x, y)?.id ?? null),
+      onTap: (x, y) => {
+        const hit = field.pick(x, y)
+        if (hit) return selectRef.current(hit.id)
+        // a tap on open water closes the menu and returns to the aquarium
+        selectRef.current(null)
+        setMode('aquarium')
+      },
       onDoubleTap: (x, y) => {
         const hit = field.pick(x, y)
         if (hit) { field.focus(hit.id); selectRef.current(hit.id) }
