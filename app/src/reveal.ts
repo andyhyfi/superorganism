@@ -86,7 +86,6 @@ export const INFO = {
   'act.clear': { label: 'Clear', rule: { always: true } },
   'act.overDeposit': { label: 'More than the 1,000 USDC deposit limit', rule: { always: true } },
   'act.overUser': { label: 'Over your 1,000 USDC total limit', rule: { always: true } },
-  'act.withdrawRecalls': { label: 'Withdrawing calls this cell’s lent energy home.', rule: { always: true } },
   'act.nothingHere': { label: 'You have nothing in this cell to withdraw.', rule: { always: true } },
   'you.cell': { label: 'Cell', rule: { always: true } },
   'hud.wallet': { label: 'Wallet', rule: { always: true } },

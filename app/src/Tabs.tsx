@@ -81,7 +81,6 @@ export function NodeTab(p: DeepProps) {
       </div>
       {out && s.claim === 0n && <p className="hint">{t('act.nothingHere')}</p>}
       {(tooSmall || tooBig) && <p className="hint-err">{tooSmall ? t('act.belowMin') : overReason}</p>}
-      {out && s.lent > 0n && <p className="hint">{t('act.withdrawRecalls')}</p>}
       <div className="quick">
         {[10, 50, 100].map(v => <button key={v} className="cell-quiet" disabled={units >= limit} onClick={() => add(v)}>+{v}</button>)}
         <button className="cell-quiet" disabled={limit === 0n} aria-pressed={units === limit && limit > 0n} onClick={() => p.setAmount(fromUnits(limit))}>{t('act.max')}</button>
