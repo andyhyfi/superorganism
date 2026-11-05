@@ -135,12 +135,14 @@ export class Painter {
   }
 
   /** The cell body for a species (baked once per species and variant, then reused). */
-  body(x: number, y: number, r: number, sp: number, variant: number, rot: number, alpha: number) {
+  /** `light` 1 = full color; toward 0 the cell darkens to a dim grey-violet (empty cells). */
+  body(x: number, y: number, r: number, sp: number, variant: number, rot: number, alpha: number, light = 1) {
     const key = sp * 4 + (variant & 3)
     let t = this.tex.body.get(key)
     if (!t) { t = Texture.from(bakeCell(SPECIES[sp], 1000 + key * 7919)); this.tex.body.set(key, t) }
     const s = this.pools.body.take(t)
-    s.position.set(x, y); s.width = s.height = r * 2; s.rotation = rot; s.tint = 0xffffff; s.alpha = alpha
+    const c = (lo: number) => Math.round(lo + (255 - lo) * light)
+    s.position.set(x, y); s.width = s.height = r * 2; s.rotation = rot; s.tint = (c(52) << 16) | (c(46) << 8) | c(64); s.alpha = alpha
   }
 
   speck(x: number, y: number, radius: number, color: number, alpha: number) {

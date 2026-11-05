@@ -21,7 +21,11 @@ const WATER = {
   bounce: 0.55, // how springy a bump is (0 = stops dead, 1 = perfect bounce)
   gap: 6, // space kept between membranes
   room: 1.9, // dish size relative to the cells it holds (bigger = more open water)
+  emptyDrift: 9, // how fast an emptied cell drifts outward (px/s)
 }
+
+/** A cell at or below this many USDC counts as empty: it goes dark and drifts to the edge. */
+const EMPTY = 0.000001
 
 // Camera feel: lazy and comfortable, like moving underwater. Higher ease = snappier.
 // ease/followEase/autoEase are rates per second (time to settle ~ 3 / rate seconds).
@@ -54,6 +58,7 @@ type VNode = {
   hue: number
   sp: number // species (look); placeholder: from lineage, later from mutations
   lit: number // 0..1, the selection light
+  dim: number // 0..1, how far the cell has gone dark (empty cells)
   variant: number
   phase: number; spin: number
   bubbles: Bubble[]
@@ -229,7 +234,7 @@ export class Field {
     const path: number[] = []
     for (let n = c; n.id !== 0; n = chain[n.parent]) path.unshift(n.id)
     return {
-      sp: speciesOf(path), variant: c.id, lit: 0,
+      sp: speciesOf(path), variant: c.id, lit: 0, dim: total <= EMPTY ? 1 : 0,
       id: c.id,
       x: pv ? pv.x + rand(-20, 20) : 0,
       y: pv ? pv.y + rand(-20, 20) : 0,
@@ -287,7 +292,7 @@ export class Field {
         vx: ux * 18 * s, vy: uy * 18 * s, // the halves part gently, then the water takes over
         r: rc, total: n.total / 2, mid: n.mid,
         hue: n.hue + (id % 2 ? 9 : -9),
-        sp: id % 2 === 0 ? (n.sp + 1 + (id % 5)) % SPECIES.length : n.sp, variant: id, lit: 0,
+        sp: id % 2 === 0 ? (n.sp + 1 + (id % 5)) % SPECIES.length : n.sp, variant: id, lit: 0, dim: n.dim,
         phase: n.phase, spin: n.spin,
         // every claim halves into each child, so both children carry every depositor
         bubbles: n.bubbles.filter(b => !b.out).map(b => ({ ...b, amount: b.amount / 2, a: b.a + i * 1.3, in: 1 })),
@@ -301,6 +306,8 @@ export class Field {
   }
 
   private dishR = 0
+  private view = { x: 0, y: 0, hw: 0, hh: 0 } // the overview frame in world units
+  private fit = { z: 1, cx: 0, cy: 0 }
 
   /** How far a cell reaches from its center (a dividing cell is stretched along its axis). */
   private reach(n: VNode) {
@@ -315,11 +322,22 @@ export class Field {
       if (!n.splitting) n.r += (radiusOf(n.total) - n.r) * Math.min(1, dt * 1.5)
       n.alpha += (1 - n.alpha) * Math.min(1, dt * 1.2)
       n.lit += ((this.selected === n.id ? 1 : 0) - n.lit) * Math.min(1, dt * 1.6)
+      n.dim += ((n.total <= EMPTY ? 1 : 0) - n.dim) * Math.min(1, dt * 0.25) // fades over several seconds
       // very slow water: a gentle swirling current that changes over minutes
       const cx = Math.sin(n.y * 0.004 + t * 0.05) + 0.6 * Math.sin(n.x * 0.007 - t * 0.037 + 1.3)
       const cy = Math.cos(n.x * 0.004 - t * 0.045) + 0.6 * Math.cos(n.y * 0.006 + t * 0.031 + 2.1)
-      n.vx += (cx * WATER.current / 1.6 - n.vx) * toWater
-      n.vy += (cy * WATER.current / 1.6 - n.vy) * toWater
+      let wx = cx * WATER.current / 1.6, wy = cy * WATER.current / 1.6
+      if (n.dim > 0.05 && this.view.hw) {
+        // empty: drifts slowly outward until it rests just inside the edge of the screen
+        const dx = n.x - this.view.x, dy = n.y - this.view.y, d = Math.hypot(dx, dy) || 1
+        const ux = dx / d, uy = dy / d
+        const s = 1 / Math.max(Math.abs(ux) / this.view.hw, Math.abs(uy) / this.view.hh) // distance to the frame edge
+        const rest = Math.max(0, s * 0.96 - n.r)
+        const k = Math.max(0, Math.min(1, (rest - d) / 60)) * n.dim
+        wx += ux * WATER.emptyDrift * k; wy += uy * WATER.emptyDrift * k
+      }
+      n.vx += (wx - n.vx) * toWater
+      n.vy += (wy - n.vy) * toWater
       n.x += n.vx * dt
       n.y += n.vy * dt
     }
@@ -327,7 +345,7 @@ export class Field {
     // the dish: sized to the cells it holds, resizing slowly
     const list = [...this.nodes.values()]
     let area = 0
-    for (const n of list) area += (this.reach(n) + WATER.gap) ** 2
+    for (const n of list) if (n.total > EMPTY) area += (this.reach(n) + WATER.gap) ** 2
     const want = Math.sqrt(area) * WATER.room + 40
     // grows at once when cells need room (so it never squeezes them together), shrinks slowly
     this.dishR = !this.dishR || want > this.dishR ? want : this.dishR + (want - this.dishR) * Math.min(1, dt * 0.2)
@@ -356,7 +374,8 @@ export class Field {
       // the dish wall
       for (const n of list) {
         const d = Math.hypot(n.x, n.y) || 1e-6
-        const lim = this.dishR - this.reach(n)
+        // live cells stay inside the dish; empty ones may sit out in the band beyond it
+        const lim = Math.max(this.dishR, n.total <= EMPTY ? Math.hypot(this.view.hw, this.view.hh) : 0) - this.reach(n)
         if (d <= lim) continue
         const ux = n.x / d, uy = n.y / d
         n.x = ux * Math.max(0, lim); n.y = uy * Math.max(0, lim)
@@ -385,6 +404,21 @@ export class Field {
     const ki = 1 - Math.exp(-dt * 2.2)
     this.insetNow.right += (this.inset.right - this.insetNow.right) * ki
     this.insetNow.bottom += (this.inset.bottom - this.insetNow.bottom) * ki
+    {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
+    // frame the live cells; empty ones are left to drift out at the edges
+    const hasLive = [...this.nodes.values()].some(n => n.total > EMPTY)
+    for (const n of this.nodes.values()) {
+      if (hasLive && n.total <= EMPTY) continue
+      const pad = n.r * 1.6
+      x0 = Math.min(x0, n.x - pad); y0 = Math.min(y0, n.y - pad)
+      x1 = Math.max(x1, n.x + pad); y1 = Math.max(y1, n.y + pad)
+    }
+    const margin = 0.82
+    const z = Math.min(1.6, (vw * margin) / (x1 - x0), (vh * margin) / (y1 - y0))
+    this.fit = { z, cx: (x0 + x1) / 2, cy: (y0 + y1) / 2 }
+    this.view = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, hw: vw / 2 / z, hh: vh / 2 / z }
+    }
     if (this.camMode === 'manual' && this.autoReturnMs != null && performance.now() - this.lastInput > this.autoReturnMs) {
       this.camMode = 'auto'
     }
@@ -411,15 +445,7 @@ export class Field {
         return
       }
     }
-    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
-    for (const n of this.nodes.values()) {
-      const pad = n.r * 1.6
-      x0 = Math.min(x0, n.x - pad); y0 = Math.min(y0, n.y - pad)
-      x1 = Math.max(x1, n.x + pad); y1 = Math.max(y1, n.y + pad)
-    }
-    const margin = 0.82
-    const z = Math.min(1.6, (vw * margin) / (x1 - x0), (vh * margin) / (y1 - y0))
-    this.moveCam((x0 + x1) / 2, (y0 + y1) / 2, z, CAM.autoEase, dt)
+    this.moveCam(this.fit.cx, this.fit.cy, this.fit.z, CAM.autoEase, dt)
   }
 
   /** Springs the camera toward a target. Zoom moves in log space so in and out feel even. */
@@ -606,9 +632,10 @@ export class Field {
       }
     } else {
       const boost = 1 + 0.5 * n.lit
-      paint.glow(x, y, r, sp, alpha, boost)
-      paint.halo(x, y, r, sp, alpha, boost)
-      paint.body(x, y, r, sp, n.variant, drift, alpha)
+      const live = 1 - n.dim
+      paint.glow(x, y, r, sp, alpha * (0.1 + 0.9 * live), boost)
+      paint.halo(x, y, r, sp, alpha * (0.15 + 0.85 * live), boost)
+      paint.body(x, y, r, sp, n.variant, drift, alpha * (0.55 + 0.45 * live), live)
       if (n.lit > 0.01) {
         // selected: light blooms from the middle of the cell, then breathes slowly
         const core = hex(SPECIES[sp].core)
@@ -630,7 +657,7 @@ export class Field {
     paint.outline(
       this.membranePts(n, x, y, r),
       hex(SPECIES[sp].rim),
-      0.22 * alpha,
+      0.22 * alpha * (1 - 0.6 * n.dim),
       1,
     )
   }
