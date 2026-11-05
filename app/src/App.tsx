@@ -14,6 +14,7 @@ import { isRevealAll, setRevealAll, t } from './reveal'
 import { Orb } from './Tabs'
 import { TestDials } from './TestDials'
 import { Rolling } from './Rolling'
+import '@fontsource/capriola/latin-400.css' // display font (one weight, 400), self-hosted
 import './app.css'
 import './cell.css'
 

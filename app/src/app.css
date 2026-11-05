@@ -11,6 +11,8 @@
   --accent: #0a84ff;
   --gold: #ffcc5c;
   --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', system-ui, sans-serif;
+  /* display font: big numbers, names, titles. Capriola has one weight; never fake-bold it */
+  --font-display: 'Capriola', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
   --blur: blur(28px) saturate(170%);
   --side: 360px;
@@ -138,3 +140,9 @@ button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent
 @media (max-width: 720px) and (orientation: portrait) {
   .mode-deep .dials, .mode-deep .dials-open { display: none; } /* the bottom sheet needs the space */
 }
+
+/* display font trial (Andy, 2026-11-05): Capriola on the big numbers, cell names, tabs and buttons */
+.hero .big, .cell-name, .money .num, .deep .segmented button, .btn, .name {
+  font-family: var(--font-display); font-weight: 400; font-synthesis: none;
+}
+.hero .big { letter-spacing: -0.02em; }
