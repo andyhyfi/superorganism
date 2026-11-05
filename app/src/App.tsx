@@ -8,7 +8,8 @@ import { Field } from './field'
 import { attachGestures } from './gestures'
 import { Deep, type Tab, type Sheet, type SelectedInfo } from './Deep'
 import { toUnits } from './format'
-import { Plus, Minus, Maximize2, LayoutList, Waves } from 'lucide-react'
+import { Plus, Minus, Maximize2, LayoutList, Waves, Volume2, VolumeX } from 'lucide-react'
+import { sound } from './sound'
 import { installCellTexture } from './cellTexture'
 import { isRevealAll, setRevealAll, t } from './reveal'
 import { Orb } from './Tabs'
@@ -35,6 +36,15 @@ export default function App() {
   const [block, setBlock] = useState(0n)
   const [sel, setSel] = useState<SelectedInfo | null>(null)
   const [claims, setClaims] = useState<Map<number, bigint>>(new Map())
+  // sound: remembered between visits; browsers start audio only after a tap, so a saved "on"
+  // resumes on the first tap anywhere
+  const [soundOn, setSoundOn] = useState(sound.saved)
+  useEffect(() => {
+    if (!sound.saved) return
+    const resume = () => { sound.setOn(true); window.removeEventListener('pointerdown', resume) }
+    window.addEventListener('pointerdown', resume)
+    return () => window.removeEventListener('pointerdown', resume)
+  }, [])
   const [fees, setFees] = useState(0n)
   const [odds, setOdds] = useState(0n)
   const [wallet, setWallet] = useState(0n)
@@ -164,6 +174,7 @@ export default function App() {
               field.apply(events.filter(e => e.kind === 'loan'))
               field.setLinks(net.links)
               setLinks(net.links)
+              playEvents(field, events)
               if (events.length) await refreshMine(fresh)
             }
             setBlock(tip)
@@ -308,6 +319,9 @@ export default function App() {
         <button aria-label="Zoom out" onClick={() => fieldRef.current?.zoomBy(0.8)}><Minus size={20} strokeWidth={2.25} /></button>
         <button aria-label="Fit network" onClick={() => fieldRef.current?.fitAll()}><Maximize2 size={18} strokeWidth={2.25} /></button>
         <button aria-label="Zoom in" onClick={() => fieldRef.current?.zoomBy(1.25)}><Plus size={20} strokeWidth={2.25} /></button>
+        <button aria-label={soundOn ? 'Sound off' : 'Sound on'} aria-pressed={soundOn} onClick={() => { sound.setOn(!soundOn); setSoundOn(!soundOn) }}>
+          {soundOn ? <Volume2 size={19} strokeWidth={2.25} /> : <VolumeX size={19} strokeWidth={2.25} />}
+        </button>
         <span className="divider" />
         <button className="primary cell-btn" onClick={() => setMode(m => (m === 'deep' ? 'aquarium' : 'deep'))}>
           {mode === 'deep' ? <><Waves size={18} strokeWidth={2.25} />Watch</> : <><LayoutList size={18} strokeWidth={2.25} />Details</>}
@@ -356,6 +370,21 @@ function friendly(e: unknown): string {
 }
 
 /** Plays chain history into the field instantly, in the order it happened. */
+/** Live events to sound effects, panned to where each cell sits on screen. */
+function playEvents(field: Field, events: NetEvent[]) {
+  const panOf = (id: number) => {
+    const p = field.screenOf(id)
+    return p ? (p.x / window.innerWidth) * 2 - 1 : 0
+  }
+  for (const e of events) {
+    if (e.kind === 'deposit') sound.play('deposit', panOf(e.node), e.node)
+    else if (e.kind === 'withdraw') sound.play('withdraw', panOf(e.node), e.node)
+    else if (e.kind === 'split') sound.play('split', panOf(e.c0), e.parent)
+    else if (e.kind === 'loan') sound.play('loan', panOf(e.borrower), e.lender, e.borrower)
+    else if (e.kind === 'repay') sound.play('repay', panOf(e.lender), e.lender, e.lender + 2)
+  }
+}
+
 function replay(field: Field, finalNodes: ChainNode[], history: NetEvent[]) {
   // Start with the root only; every other node is born from a split event.
   const root = finalNodes[0]
