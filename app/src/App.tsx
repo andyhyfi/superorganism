@@ -8,7 +8,7 @@ import { Field } from './field'
 import { attachGestures } from './gestures'
 import { Deep, type Tab, type Sheet, type SelectedInfo } from './Deep'
 import { fmtUsd, toUnits } from './format'
-import { Guide, guideAtStart, markGuideSeen, type GuideVariant } from './Guide'
+import { Guide, guideAtStart, markGuideSeen } from './Guide'
 import { GUIDE } from './reveal'
 import { Plus, Minus, Maximize2, LayoutList, Waves, Volume2, VolumeX } from 'lucide-react'
 import { sound } from './sound'
@@ -60,12 +60,12 @@ export default function App() {
   const [chrome, setChrome] = useState(true) // Aquarium's light overlay; H toggles
   const [idle, setIdle] = useState(false)
   const [, setReveal] = useState(0) // dev: re-render after toggling reveal-all
-  // first-time guide: which draft (a/b) and which card; null = not showing
-  const [guide, setGuide] = useState<GuideVariant | null>(() => guideAtStart())
+  // first-time guide: showing or not, and which card
+  const [guide, setGuide] = useState(() => guideAtStart())
   const [guideStep, setGuideStep] = useState(0)
   const guideRef = useRef({ guide, guideStep })
   guideRef.current = { guide, guideStep }
-  const closeGuide = useCallback(() => { setGuide(null); markGuideSeen() }, [])
+  const closeGuide = useCallback(() => { setGuide(false); markGuideSeen() }, [])
 
   const refreshMine = async (all: ChainNode[]) => {
     const live = all.filter(n => !n.split && !n.gone).map(n => n.id)
@@ -97,7 +97,7 @@ export default function App() {
     setTab('node')
     // guide: the "tap a specimen" card moves on by itself once a specimen is tapped
     const g = guideRef.current
-    if (g.guide && GUIDE[g.guide][g.guideStep]?.kind === 'tap') setGuideStep(g.guideStep + 1)
+    if (g.guide && GUIDE[g.guideStep]?.kind === 'tap') setGuideStep(g.guideStep + 1)
   }, [refreshSelected])
   /** The selected cell split: the menu moves to its first child, keeping the tab and the amount. */
   const carry = useCallback((id: number) => {
@@ -315,7 +315,7 @@ export default function App() {
     mode === 'deep' && narrow ? `sheet-${sheet}` : '',
   ].join(' ')
   const held = [...claims.values()].reduce((a, c) => a + c, 0n)
-  const guideKind = guide ? GUIDE[guide][guideStep]?.kind : undefined
+  const guideKind = guide ? GUIDE[guideStep]?.kind : undefined
   const rootFee = nodes.find(n => n && !n.split && !n.gone)?.traits.feePpm ?? 0
   return (
     <div className={`stage mode-${mode} ${guideKind ? `guide-${guideKind}` : ''}`}>
@@ -385,10 +385,10 @@ export default function App() {
 
       {guide && (
         <Guide
-          variant={guide} step={guideStep} feePpm={rootFee} catalyst={fmtUsd(lim.eventFee)}
+          step={guideStep} feePpm={rootFee} catalyst={fmtUsd(lim.eventFee)}
           side={mode === 'deep' && !narrow}
           onStep={n => {
-            const kind = GUIDE[guide][n]?.kind
+            const kind = GUIDE[n]?.kind
             // the feed and fee cards need a specimen's menu open: open the largest one if none is
             if ((kind === 'feed' || kind === 'fee') && sel == null) {
               const big = nodes.filter(x => x && !x.split && !x.gone).sort((x, y) => (y.energy > x.energy ? 1 : -1))[0]

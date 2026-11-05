@@ -157,27 +157,19 @@ export const INFO = {
 export type InfoId = keyof typeof INFO
 
 // ---------------------------------------------------------------- first-time guide
-// Cards shown on a player's first visit (and with ?guide=a or ?guide=b in the URL, to review).
-// Two drafts to compare; PLACEHOLDER copy for Andy's line edit. {fee} and {catalyst} are filled
-// from the chain (the fee rule and the catalyst fee), so the numbers are always the real ones.
-// Card kinds: 'tap' waits for the player to tap a specimen; 'feed' lights the Feed button.
+// Cards shown on a player's first visit (and with ?guide in the URL, to review).
+// Andy's exact copy (2026-11-05). {fee} and {catalyst} are filled from the chain (the fee rule
+// and the catalyst fee), so the numbers are always the real ones.
+// Card kinds: 'tap' waits for the player to tap a specimen; 'feed' lights the Feed button;
+// 'fee' lights the Fee and Catalyst rows.
 export type GuideCard = { title: string; body: string; kind?: 'tap' | 'feed' | 'fee' | 'end' }
-export const GUIDE: Record<'a' | 'b', GuideCard[]> = {
-  a: [
-    { title: 'This colony is alive.', body: 'Each specimen grows on what players feed it.' },
-    { title: 'Tap a specimen.', body: 'Any one. Each has its own lineage.', kind: 'tap' },
-    { title: 'Feed it.', body: 'What you feed stays yours. Draw it back any time.', kind: 'feed' },
-    { title: 'The fee.', body: '{fee} on each feed and draw. A feed that sets off a catalyst pays {catalyst} USDC more.', kind: 'fee' },
-    { title: 'Evolution is evolving itself.', body: 'Not everything here is explained. Mutations and more are coming.', kind: 'end' },
-  ],
-  b: [
-    { title: 'Something is growing.', body: 'A colony of specimens, fed by its players.' },
-    { title: 'Choose one.', body: 'Tap a specimen.', kind: 'tap' },
-    { title: 'Feed it.', body: 'It stays yours. Draw it back whenever you want.', kind: 'feed' },
-    { title: 'What it costs.', body: '{fee} per feed or draw. {catalyst} USDC when a feed sets off a catalyst.', kind: 'fee' },
-    { title: 'Still evolving.', body: 'The colony changes itself. Watch closely. Mutations are coming.', kind: 'end' },
-  ],
-}
+export const GUIDE: GuideCard[] = [
+  { title: 'This colony is alive.', body: 'Each specimen grows on what players feed it.' },
+  { title: 'Tap a specimen.', body: 'Any one. Each has its own lineage.', kind: 'tap' },
+  { title: 'Feed it.', body: 'What you feed stays yours. Draw it back any time.', kind: 'feed' },
+  { title: 'The fee.', body: '{fee} on each feed and draw. A feed that sets off a catalyst pays {catalyst} USDC more.', kind: 'fee' },
+  { title: 'Evolution is evolving itself.', body: 'Not everything here is explained. Mutations and more are coming.', kind: 'end' },
+]
 export const GUIDE_WORDS = { next: 'Next', skip: 'Skip', done: 'Observe', label: 'Guide' }
 
 let revealAll = typeof location !== 'undefined' && new URLSearchParams(location.search).get('reveal') === 'all'

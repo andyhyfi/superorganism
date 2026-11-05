@@ -1,19 +1,16 @@
 // First-time guide: a few glass cards over the live colony. Never blocks the field: the card
 // floats at the top, and taps go through to the specimens. All cards sit in one grid cell so the
 // card keeps the size of its longest page and never resizes between steps; pages cross-fade.
-// Shown once per browser (localStorage), or on demand with ?guide=a / ?guide=b.
+// Shown once per browser (localStorage), or on demand with ?guide in the URL.
 import { useEffect } from 'react'
 import { GUIDE, GUIDE_WORDS, type GuideCard } from './reveal'
 
 const KEY = 'evolution.guide'
 
-export type GuideVariant = 'a' | 'b'
-
-/** Which guide to show at start, or null when this player has already seen it. */
-export function guideAtStart(): GuideVariant | null {
-  const q = new URLSearchParams(location.search).get('guide')
-  if (q === 'a' || q === 'b') return q
-  try { return localStorage.getItem(KEY) ? null : 'a' } catch { return 'a' }
+/** Show the guide at start? Yes on a first visit, or with ?guide in the URL. */
+export function guideAtStart(): boolean {
+  if (new URLSearchParams(location.search).has('guide')) return true
+  try { return !localStorage.getItem(KEY) } catch { return true }
 }
 
 export function markGuideSeen() {
@@ -23,8 +20,7 @@ export function markGuideSeen() {
 /** 1 ppm = 0.0001%: the fee rule as a short percentage. */
 const pct = (ppm: number) => `${(ppm / 1e4).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`
 
-export function Guide({ variant, step, feePpm, catalyst, onStep, onClose, onDone, side }: {
-  variant: GuideVariant
+export function Guide({ step, feePpm, catalyst, onStep, onClose, onDone, side }: {
   step: number
   feePpm: number
   catalyst: string
@@ -33,7 +29,7 @@ export function Guide({ variant, step, feePpm, catalyst, onStep, onClose, onDone
   onDone: () => void // last card: close the guide and return to the living colony
   side: boolean // desktop side panel open: center over the colony, not the panel
 }) {
-  const cards: GuideCard[] = GUIDE[variant]
+  const cards: GuideCard[] = GUIDE
   const last = step === cards.length - 1
   const fill = (s: string) => s.replace('{fee}', pct(feePpm)).replace('{catalyst}', catalyst)
 
