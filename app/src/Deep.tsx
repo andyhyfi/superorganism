@@ -66,7 +66,7 @@ export function Deep(p: DeepProps) {
   }, [p.narrow, p.setSheet])
 
   return (
-    <aside ref={ref} className={p.narrow ? `deep membrane sheet ${p.sheet}` : 'deep membrane side'} aria-label="Details">
+    <aside ref={ref} className={p.narrow ? `deep membrane sheet ${p.sheet}` : 'deep membrane side'} aria-label={t('mode.study')}>
       {p.narrow && <div ref={grab} className="grabber" role="slider" aria-label="Drag to resize" aria-valuetext={p.sheet} />}
       <div className="head">
         <div className="segmented membrane" role="tablist">

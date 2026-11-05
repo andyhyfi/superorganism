@@ -192,3 +192,10 @@ button.cell:active { background: var(--fill-2); }
 .share-cut { position: absolute; top: -3px; width: 1.5px; height: 10px; margin-left: -0.75px; background: rgba(255,255,255,0.75); transform: skewX(-20deg); border-radius: 1px; transition: left 0.6s ease; }
 .share-row { display: flex; justify-content: space-between; margin-top: 8px; font-size: 13px; line-height: 18px; color: var(--text-2); white-space: nowrap; }
 .share-row .num { font-variant-numeric: tabular-nums; }
+
+/* a row with a hint (Catalyst): a small info mark; the hint replaces the label on tap */
+.cell.has-hint { cursor: help; }
+.cell.has-hint .hint-mark { margin-left: 6px; vertical-align: -2px; opacity: 0.5; }
+.cell.has-hint:hover .hint-mark { opacity: 0.9; }
+.cell.has-hint .k { min-width: 0; overflow: hidden; }
+.cell.has-hint .hint-text { font-size: 12px; line-height: 18px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }

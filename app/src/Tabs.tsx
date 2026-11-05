@@ -1,7 +1,7 @@
 // The four Deep tabs. Words come from reveal.ts (t), and every optional section asks shown()
 // first, so what a player sees can be gated by holdings, deposits, or mutations.
 import { useState, type ReactNode } from 'react'
-import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Spline, X } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, ChevronRight, GitFork, Info, Spline, X } from 'lucide-react'
 import type { DeepProps } from './Deep'
 import { cleanAmount, fmtPct, fmtUsd, fromUnits, short, toUnits } from './format'
 import { shown, t, type Ctx, type InfoId } from './reveal'
@@ -130,7 +130,6 @@ export function NodeTab(p: DeepProps) {
               )
             })}
           </div>
-          <p className="foot">{t('cell.loansExplainer')}</p>
         </>
       )}
 
@@ -140,7 +139,7 @@ export function NodeTab(p: DeepProps) {
         <Row k={t('cell.fee')} v={`${((node?.traits.feePpm ?? 0) / 1e4).toFixed(4)}%`} />
         <Row k={t('cell.minimum')} v="1" />
         {p.limits.maxDeposit > 0n && <Row k={t('cell.maximum')} v={fmtUsd(p.limits.maxDeposit)} />}
-        {p.limits.eventFee > 0n && <Row k={t('cell.eventFee')} v={fmtUsd(p.limits.eventFee)} />}
+        {p.limits.eventFee > 0n && <Row k={t('cell.eventFee')} v={fmtUsd(p.limits.eventFee)} hint={t('cell.eventFeeHint')} />}
         <Gate id="cell.generation" c={c}><Row k={t('cell.generation')} v={String(node?.depth ?? 0)} /></Gate>
       </div>
 
@@ -193,7 +192,7 @@ export function NetworkTab(p: DeepProps) {
         <div className="segmented membrane" role="tablist" style={{ marginBottom: 12 }}>
           {(['total', 'depth', 'id'] as SortKey[]).map(k => (
             <button key={k} role="tab" aria-selected={sort === k} onClick={() => setSort(k)}>
-              {k === 'total' ? 'Largest' : k === 'depth' ? 'Newest' : 'Oldest'}
+              {k === 'total' ? t('sort.mass') : k === 'depth' ? t('sort.youngest') : t('sort.eldest')}
             </button>
           ))}
         </div>
@@ -335,10 +334,22 @@ function FeedList({ p, rows }: { p: DeepProps; rows: DeepProps['feed'] }) {
 
 // ------------------------------------------------------------------- shared
 
-function Row({ k, v }: { k: string; v: string }) {
+/** A label and a value. With `hint`: hovering (mouse) shows it, and a tap (touch) shows it in
+ *  place of the label for a few seconds, so the row never changes size. */
+function Row({ k, v, hint }: { k: string; v: string; hint?: string }) {
+  const [open, setOpen] = useState(false)
+  if (!hint) {
+    return (
+      <div className="cell">
+        <span className="k">{k}</span>
+        <span className="v">{v}</span>
+      </div>
+    )
+  }
   return (
-    <div className="cell">
-      <span className="k">{k}</span>
+    <div className="cell has-hint" title={hint} aria-description={hint} tabIndex={0}
+      onClick={() => { setOpen(true); window.setTimeout(() => setOpen(false), 3500) }}>
+      <span className="k">{open ? <span className="hint-text">{hint}</span> : <>{k}<Info size={13} strokeWidth={2.25} className="hint-mark" /></>}</span>
       <span className="v">{v}</span>
     </div>
   )

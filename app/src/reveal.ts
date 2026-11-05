@@ -69,80 +69,77 @@ export const networkActivityExists = () =>
 
 export const INFO = {
   // tabs
-  'tab.node': { label: 'Node', rule: { always: true } },
-  'tab.network': { label: 'Network', rule: { always: true } },
+  'tab.node': { label: 'Specimen', rule: { always: true } },
+  'tab.network': { label: 'Colony', rule: { always: true } },
   'tab.yours': { label: 'Yours', rule: { always: true } },
-  'tab.activity': { label: 'Activity', rule: { always: true } },
+  'tab.activity': { label: 'Signals', rule: { always: true } },
 
   // a cell
-  'cell.balance': { label: 'Balance', rule: { always: true } },
-  'cell.observe': { label: 'Observe', rule: { always: true } },
-  'cell.deposits': { label: 'Deposited here', rule: { always: true }, note: 'money rule: keep visible' },
-  'cell.loans': { label: 'Energy on loan', rule: { always: true } },
+  'cell.balance': { label: 'Mass', rule: { always: true } },
+  'cell.observe': { label: 'Focus', rule: { always: true } },
+  'cell.deposits': { label: 'Fed here', rule: { always: true }, note: 'money rule: keep visible' },
+  'cell.loans': { label: 'Mass on loan', rule: { always: true } },
   'cell.lentTo': { label: 'Lent to', rule: { always: true } },
   'cell.borrowedFrom': { label: 'Borrowed from', rule: { always: true } },
   'cell.returnsIn': { label: 'Returns in', rule: { always: true } },
-  'cell.loansExplainer': {
-    label: 'Cells lend each other energy for a while. Loans move no money: what you deposited stays yours, and you can always withdraw it.',
-    rule: { always: true },
-  },
   'cell.maximum': { label: 'Max', rule: { always: true }, note: 'money rule: keep visible' },
-  'cell.eventFee': { label: 'Event fee', rule: { always: true }, note: 'money rule: keep visible. Charged only on a deposit that starts a loan event. Rename pending (Andy)' },
-  'cell.divideChance': { label: 'Chance this cell divides', rule: { heldHere: 10 }, note: 'placeholder gate' },
+  'cell.eventFee': { label: 'Catalyst', rule: { always: true }, note: 'money rule: keep visible' },
+  'cell.eventFeeHint': { label: 'Fee when a feed sets off a catalyst', rule: { always: true } },
+  'cell.divideChance': { label: 'Chance this specimen divides', rule: { heldHere: 10 }, note: 'placeholder gate' },
   'cell.fillCheck': { label: 'Fill check', rule: { heldHere: 100 }, note: 'placeholder gate' },
   'cell.divideOdds': { label: 'Then divides', rule: { heldHere: 100 }, note: 'placeholder gate' },
   'cell.divideExplainer': {
     label: 'Fuller cells are more likely to divide. When one does, every balance in it is split evenly between the two new cells.',
     rule: { heldHere: 10 },
   },
-  'cell.generation': { label: 'Generation', rule: { deposits: 3 }, note: 'placeholder gate' },
+  'cell.generation': { label: 'Strain', rule: { deposits: 3 }, note: 'placeholder gate' },
   'cell.fee': { label: 'Fee', rule: { always: true }, note: 'money rule: keep visible' },
   'cell.minimum': { label: 'Min', rule: { always: true }, note: 'money rule: keep visible' },
   'cell.lineage': { label: 'Lineage', rule: { heldTotal: 50 }, note: 'placeholder gate' },
-  'cell.lineageExplainer': { label: 'Each cell came from its parent dividing.', rule: { heldTotal: 50 } },
+  'cell.lineageExplainer': { label: 'Each specimen came from its parent dividing.', rule: { heldTotal: 50 } },
   'cell.traits': { label: 'Mutations', rule: { trait: 'any' }, note: 'appears once mutations exist' },
 
   // actions (money in and out is never hidden)
   'act.amount': { label: 'Amount', rule: { always: true } },
-  'act.deposit': { label: 'Deposit', rule: { always: true } },
-  'act.depositing': { label: 'Depositing…', rule: { always: true } },
-  'act.withdraw': { label: 'Withdraw', rule: { always: true } },
-  'act.withdrawing': { label: 'Withdrawing…', rule: { always: true } },
-  'act.withdrawAll': { label: 'Withdraw all', rule: { always: true } },
+  'act.deposit': { label: 'Feed', rule: { always: true } },
+  'act.depositing': { label: 'Feeding…', rule: { always: true } },
+  'act.withdraw': { label: 'Draw', rule: { always: true } },
+  'act.withdrawing': { label: 'Drawing…', rule: { always: true } },
+  'act.withdrawAll': { label: 'Draw all', rule: { always: true } },
   'act.max': { label: 'Max', rule: { always: true } },
   'act.belowMin': { label: 'Minimum is 1 USDC', rule: { always: true } },
   'act.overWallet': { label: 'More than your wallet holds', rule: { always: true } },
   'act.overClaim': { label: 'More than your share here', rule: { always: true } },
   'act.clear': { label: 'Clear', rule: { always: true } },
-  'act.overDeposit': { label: 'More than the 1,000 USDC deposit limit', rule: { always: true } },
+  'act.overDeposit': { label: 'More than the 1,000 USDC feed limit', rule: { always: true } },
   'act.overUser': { label: 'Over your 1,000 USDC total limit', rule: { always: true } },
-  'act.nothingHere': { label: 'Nothing to withdraw here', rule: { always: true } },
-  'you.cell': { label: 'Cell', rule: { always: true } },
+  'act.nothingHere': { label: 'Nothing to draw here', rule: { always: true } },
+  'you.cell': { label: 'Specimen', rule: { always: true } },
   'hud.wallet': { label: 'Wallet', rule: { always: true } },
-  'hud.deposited': { label: 'Deposited', rule: { always: true } },
-  'hud.myCells': { label: 'My cells', rule: { always: true } },
+  'hud.deposited': { label: 'Fed', rule: { always: true } },
+  'hud.myCells': { label: 'My specimens', rule: { always: true } },
 
   // the network
   'net.held': { label: 'Network size', rule: { always: true } },
-  'net.counts': { label: 'cells', rule: { always: true } },
+  'net.counts': { label: 'specimens', rule: { always: true } },
   'net.splits': { label: 'splits', rule: { deposits: 1 } },
-  'net.generations': { label: 'generations', rule: { heldTotal: 50 } },
-  'net.list': { label: 'All cells', rule: { always: true } },
+  'net.generations': { label: 'strains', rule: { heldTotal: 50 } },
+  'net.list': { label: 'All specimens', rule: { always: true } },
   'net.sort': { label: 'Sort', rule: { deposits: 1 } },
   'net.fees': { label: 'Fees collected', rule: { heldTotal: 500 }, note: 'placeholder gate' },
 
   // the player
-  'you.balance': { label: 'Your balance in the network', rule: { always: true } },
+  'you.balance': { label: 'Fed into the colony', rule: { always: true } },
   'you.wallet': { label: 'in your wallet', rule: { always: true } },
-  'you.empty': { label: 'Nothing deposited yet', rule: { always: true } },
-  'you.emptyHint': { label: 'Tap a cell and deposit to join the network.', rule: { always: true } },
+  'you.empty': { label: 'Nothing fed yet', rule: { always: true } },
+  'you.emptyHint': { label: 'Tap a specimen and feed it to join the colony.', rule: { always: true } },
 
   // activity
-  'feed.deposit': { label: 'Deposit', rule: { always: true } },
-  'feed.withdraw': { label: 'Withdrawal', rule: { always: true } },
+  'feed.deposit': { label: 'Feed', rule: { always: true } },
+  'feed.withdraw': { label: 'Draw', rule: { always: true } },
   'feed.split': { label: 'Divided', rule: { always: true } },
-  'feed.loan': { label: 'Energy lent', rule: { always: true } },
-  'feed.repay': { label: 'Energy returned', rule: { always: true } },
+  'feed.loan': { label: 'Mass lent', rule: { always: true } },
+  'feed.repay': { label: 'Mass returned', rule: { always: true } },
   'feed.empty': { label: 'Quiet for now', rule: { always: true } },
 
   // Activity tab: what other players do. Each kind unlocks at its own level (USDC deposited). Levels and the master switch live in NETWORK_ACTIVITY below.
@@ -152,6 +149,15 @@ export const INFO = {
   'net.seeLoans': { label: 'Network loans and returns', rule: networkRule('loans') },
 
   // Yours tab: your own history
+  // sorting the colony list
+  'sort.mass': { label: 'Mass', rule: { always: true } },
+  'sort.youngest': { label: 'Youngest', rule: { always: true } },
+  'sort.eldest': { label: 'Eldest', rule: { always: true } },
+
+  // the bottom mode button: Observe = the living field only; Study = open the menu
+  'mode.observe': { label: 'Observe', rule: { always: true } },
+  'mode.study': { label: 'Study', rule: { always: true } },
+
   'you.activity': { label: 'Your activity', rule: { always: true } },
   'you.noActivity': { label: 'No activity yet', rule: { always: true } },
 

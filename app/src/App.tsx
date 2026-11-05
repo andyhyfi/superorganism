@@ -342,7 +342,7 @@ export default function App() {
         </button>
         <span className="divider" />
         <button className="primary cell-btn" onClick={() => setMode(m => (m === 'deep' ? 'aquarium' : 'deep'))}>
-          {mode === 'deep' ? <><Waves size={18} strokeWidth={2.25} />Watch</> : <><LayoutList size={18} strokeWidth={2.25} />Details</>}
+          {mode === 'deep' ? <><Waves size={18} strokeWidth={2.25} />{t('mode.observe')}</> : <><LayoutList size={18} strokeWidth={2.25} />{t('mode.study')}</>}
         </button>
       </div>
 
@@ -381,7 +381,7 @@ function friendly(e: unknown): string {
   if (/HTTP request failed|fetch|network|Failed to fetch|timed? ?out/i.test(m)) return 'Connection lost. Nothing was sent. Try again in a moment.'
   if (/insufficient|exceeds balance/i.test(m)) return 'Not enough USDC in your wallet.'
   if (/rejected|denied/i.test(m)) return 'Cancelled.'
-  if (/AboveMaxDeposit/.test(m)) return 'The most you can deposit at once is 1,000 USDC.'
+  if (/AboveMaxDeposit/.test(m)) return 'The most you can feed at once is 1,000 USDC.'
   if (/AboveUserLimit/.test(m)) return 'You can hold at most 1,000 USDC in the network.'
   if (/revert/i.test(m)) return 'The network refused this. Nothing was sent.'
   return m.split('\n')[0].slice(0, 120)
