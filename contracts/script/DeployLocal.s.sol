@@ -86,12 +86,12 @@ contract DeployLocal is Script {
         }
         vm.stopBroadcast();
 
-        // Seed the network: 7 live cells, each with a few deposits. The test dials force a split
+        // Seed the network: 5 live cells (Andy's starting mode), each with a few deposits. The test dials force a split
         // on each seeding deposit (and turn events off), then go back to the real rules.
         vm.startBroadcast(deployerKey);
         evo.setDemoDials(1_000_000, 1);
         vm.stopBroadcast();
-        uint256[6] memory grow = [uint256(240e6), 90e6, 70e6, 60e6, 50e6, 40e6];
+        uint256[4] memory grow = [uint256(240e6), 90e6, 70e6, 60e6];
         for (uint256 i = 0; i < grow.length; ++i) {
             uint256 key = vm.deriveKey(MNEMONIC, uint32(1 + (i % 3)));
             uint256[] memory live = evo.liveNodes();
