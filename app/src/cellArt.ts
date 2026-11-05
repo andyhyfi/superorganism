@@ -37,7 +37,6 @@ export function bakeCell(sp: Species, seed: number, size = 256): HTMLCanvasEleme
   const noise = makeNoise(seed)
   const dark = rgb(sp.dark), light = rgb(sp.light), core = rgb(sp.core), rim = rgb(sp.rim)
   const m = size / 2
-  const twist = 0.6 + (seed % 7) * 0.08
 
   const warm = core // core is a soft warm glow, not a white dot
   for (let y = 0; y < size; y++) {
@@ -51,8 +50,8 @@ export function bakeCell(sp: Species, seed: number, size = 256): HTMLCanvasEleme
       const ux = dx + wx * 0.35, uy = dy + wy * 0.35
       // clouds ~0.15 R
       const mot = fbm(noise, ux * 3.4 + 11, uy * 3.4 + 7, 4)
-      // filaments: warped streaks running outward
-      const ang = (Math.atan2(uy, ux) / (Math.PI * 2) + 0.5) * 40 + r * twist * 6
+      // filaments: streaks running straight outward (no swirl)
+      const ang = (Math.atan2(uy, ux) / (Math.PI * 2) + 0.5) * 40
       const fil = Math.pow(fbm(noise, ang, r * 2.6 + 40, 3), 1.4)
       let t = lerp(mot, fil * 1.3, sp.fil * 0.8)
       t = smooth(0.22, 0.82, t)

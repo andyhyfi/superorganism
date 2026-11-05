@@ -6,8 +6,6 @@ import { Application, Container, Graphics, Sprite, Texture } from 'pixi.js'
 import { bakeBackdrop, bakeCell, bakeHalo } from './cellArt'
 import { SPECIES, hex } from './species'
 
-const TAU = Math.PI * 2
-const SPIRAL_LEVELS = 8 // spiral tightness steps, baked once each
 
 /** hsl(h, s%, l%) to 0xRRGGBB. */
 export function hsl(h: number, s: number, l: number): number {
@@ -40,22 +38,6 @@ const bakeGlow = () => bake(128, (c, s) => {
   c.fillStyle = g; c.fillRect(0, 0, s, s)
 })
 
-/** Three spiral arms, white, reaching 0.92 of the texture radius (tinted and faded per use). */
-const bakeSpiral = (turns: number) => bake(256, (c, s) => {
-  const m = s / 2, R = m * 0.92
-  c.strokeStyle = '#fff'; c.lineWidth = 1.0; c.lineCap = 'round'
-  for (let k = 0; k < 3; k++) {
-    c.beginPath()
-    for (let i = 0; i <= 90; i++) {
-      const p = i / 90, rr = R * Math.pow(p, 0.8)
-      const a = (k / 3) * TAU + p * turns * TAU
-      if (i) c.lineTo(m + Math.cos(a) * rr, m + Math.sin(a) * rr)
-      else c.moveTo(m, m)
-    }
-    c.stroke()
-  }
-})
-
 /** A pool of sprites on one layer; unused ones hide at the end of a frame. */
 class Pool {
   private items: Sprite[] = []
@@ -85,9 +67,9 @@ export class Painter {
   private app = new Application()
   private ready = false
   private destroyed = false
-  private tex!: { dot: Texture; glow: Texture; halo: Texture; spiral: Texture[]; bg: Texture; body: Map<number, Texture> }
+  private tex!: { dot: Texture; glow: Texture; halo: Texture; bg: Texture; body: Map<number, Texture> }
   private bg!: Sprite
-  private pools!: { dust: Pool; glow: Pool; halo: Pool; body: Pool; spiral: Pool; speck: Pool }
+  private pools!: { dust: Pool; glow: Pool; halo: Pool; body: Pool; speck: Pool }
   private lines!: Graphics
   readonly init: Promise<void>
 
@@ -113,14 +95,13 @@ export class Painter {
       a11y?._destroyTouchHook?.()
       this.tex = {
         dot: bakeDot(), glow: bakeGlow(), halo: Texture.from(bakeHalo()), bg: Texture.from(bakeBackdrop()), body: new Map(),
-        spiral: Array.from({ length: SPIRAL_LEVELS }, (_, i) => bakeSpiral(0.5 + (i / (SPIRAL_LEVELS - 1)) * 3.2)),
       }
       const stage = this.app.stage
       this.bg = new Sprite(this.tex.bg); this.bg.anchor.set(0.5); stage.addChild(this.bg)
       const layer = () => stage.addChild(new Container())
       this.pools = {
         dust: new Pool(layer(), false), glow: new Pool(layer()), halo: new Pool(layer()), body: new Pool(layer(), false),
-        spiral: new Pool(layer()), speck: new Pool(layer()),
+        speck: new Pool(layer()),
       }
       this.lines = new Graphics(); this.lines.blendMode = 'add'; stage.addChild(this.lines)
       this.ready = true
@@ -159,14 +140,6 @@ export class Painter {
     if (!t) { t = Texture.from(bakeCell(SPECIES[sp], 1000 + key * 7919)); this.tex.body.set(key, t) }
     const s = this.pools.body.take(t)
     s.position.set(x, y); s.width = s.height = r * 2; s.rotation = rot; s.tint = 0xffffff; s.alpha = alpha
-  }
-
-  /** A faint slow swirl inside the body; fill 0..1 picks how tight it is. */
-  spiral(x: number, y: number, r: number, fill: number, rot: number, sp: number, alpha: number) {
-    const i = Math.round(Math.max(0, Math.min(1, fill)) * (SPIRAL_LEVELS - 1))
-    const s = this.pools.spiral.take(this.tex.spiral[i])
-    s.position.set(x, y); s.width = s.height = r * 1.8; s.rotation = rot
-    s.tint = hex(SPECIES[sp].core); s.alpha = (0.03 + fill * 0.05) * alpha
   }
 
   speck(x: number, y: number, radius: number, color: number, alpha: number) {

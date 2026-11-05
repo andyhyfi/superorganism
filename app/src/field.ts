@@ -30,7 +30,7 @@ const WATER = {
 const CAM = {
   ease: 4.2, // manual drag/zoom catching up to where the user sent it (~1.4 s)
   followEase: 2.8, // gliding over to a node you tapped (~2 s)
-  autoEase: 1.1, // Aquarium drifting back to show the whole network (~5 s)
+  autoEase: 2.0, // easing back to show the whole network (~3 s)
   glideCarry: 0.7, // how much of a flick's speed carries on after release
   glideDecay: 2.4, // how quickly that drift slows (lower = longer glide)
 }
@@ -53,6 +53,7 @@ type VNode = {
   mid: number // roll-curve midpoint, USDC
   hue: number
   sp: number // species (look); placeholder: from lineage, later from mutations
+  lit: number // 0..1, the selection light
   variant: number
   phase: number; spin: number
   bubbles: Bubble[]
@@ -77,6 +78,7 @@ export class Field {
   private lastInput = 0
   private autoReturnMs: number | null = 15000
   private inset = { right: 0, bottom: 0 }
+  private insetNow = { right: 0, bottom: 0 } // eases toward inset so panels never jolt the view
   private zoomTarget: number | null = null
   private vel = { x: 0, y: 0, z: 0 } // camera speed; zoom speed is in log space
   private raf = 0
@@ -223,7 +225,7 @@ export class Field {
     const path: number[] = []
     for (let n = c; n.id !== 0; n = chain[n.parent]) path.unshift(n.id)
     return {
-      sp: speciesOf(path), variant: c.id,
+      sp: speciesOf(path), variant: c.id, lit: 0,
       id: c.id,
       x: pv ? pv.x + rand(-20, 20) : 0,
       y: pv ? pv.y + rand(-20, 20) : 0,
@@ -281,7 +283,7 @@ export class Field {
         vx: ux * 18 * s, vy: uy * 18 * s, // the halves part gently, then the water takes over
         r: rc, total: n.total / 2, mid: n.mid,
         hue: n.hue + (id % 2 ? 9 : -9),
-        sp: id % 2 === 0 ? (n.sp + 1 + (id % 5)) % SPECIES.length : n.sp, variant: id,
+        sp: id % 2 === 0 ? (n.sp + 1 + (id % 5)) % SPECIES.length : n.sp, variant: id, lit: 0,
         phase: n.phase, spin: n.spin,
         // every claim halves into each child, so both children carry every depositor
         bubbles: n.bubbles.filter(b => !b.out).map(b => ({ ...b, amount: b.amount / 2, a: b.a + i * 1.3, in: 1 })),
@@ -308,6 +310,7 @@ export class Field {
     for (const n of this.nodes.values()) {
       if (!n.splitting) n.r += (radiusOf(n.total) - n.r) * Math.min(1, dt * 1.5)
       n.alpha += (1 - n.alpha) * Math.min(1, dt * 1.2)
+      n.lit += ((this.selected === n.id ? 1 : 0) - n.lit) * Math.min(1, dt * 1.6)
       // very slow water: a gentle swirling current that changes over minutes
       const cx = Math.sin(n.y * 0.004 + t * 0.05) + 0.6 * Math.sin(n.x * 0.007 - t * 0.037 + 1.3)
       const cy = Math.cos(n.x * 0.004 - t * 0.045) + 0.6 * Math.cos(n.y * 0.006 + t * 0.031 + 2.1)
@@ -375,6 +378,9 @@ export class Field {
   private updateCamera(dt: number) {
     if (!this.nodes.size) return
     const vw = this.W - this.inset.right, vh = this.H - this.inset.bottom
+    const ki = 1 - Math.exp(-dt * 2.2)
+    this.insetNow.right += (this.inset.right - this.insetNow.right) * ki
+    this.insetNow.bottom += (this.inset.bottom - this.insetNow.bottom) * ki
     if (this.camMode === 'manual' && this.autoReturnMs != null && performance.now() - this.lastInput > this.autoReturnMs) {
       this.camMode = 'auto'
     }
@@ -466,7 +472,7 @@ export class Field {
       return
     }
     this.takeManual()
-    const cx = (this.W - this.inset.right) / 2, cy = (this.H - this.inset.bottom) / 2
+    const cx = (this.W - this.insetNow.right) / 2, cy = (this.H - this.insetNow.bottom) / 2
     const wx = (px - cx) / this.goal.z + this.goal.x, wy = (py - cy) / this.goal.z + this.goal.y
     this.goal.z = clamp(this.goal.z * factor, ZMIN, ZMAX)
     this.goal.x = wx - (px - cx) / this.goal.z
@@ -475,16 +481,17 @@ export class Field {
 
   /** Zoom by `factor` around the center of the visible area. */
   zoomBy(factor: number) {
-    const cx = (this.W - this.inset.right) / 2, cy = (this.H - this.inset.bottom) / 2
+    const cx = (this.W - this.insetNow.right) / 2, cy = (this.H - this.insetNow.bottom) / 2
     this.zoomAt(cx, cy, factor)
   }
 
-  /** Center and follow a node until the user moves the camera. */
+  /** Glide over to a node and follow it. Coming from the overview it zooms in 50%;
+   *  hopping from one followed node to another keeps the zoom and just glides across. */
   focus(id: number) {
     if (!this.nodes.has(id)) return
+    if (this.camMode !== 'follow' || this.zoomTarget == null) this.zoomTarget = clamp(this.cam.z * 1.5, ZMIN, ZMAX)
     this.camMode = 'follow'
     this.follow = id
-    this.zoomTarget = null
     this.glide = { x: 0, y: 0 }
     this.lastInput = performance.now()
   }
@@ -528,12 +535,12 @@ export class Field {
   }
 
   private toScreen(x: number, y: number): [number, number] {
-    const cx = (this.W - this.inset.right) / 2, cy = (this.H - this.inset.bottom) / 2
+    const cx = (this.W - this.insetNow.right) / 2, cy = (this.H - this.insetNow.bottom) / 2
     return [(x - this.cam.x) * this.cam.z + cx, (y - this.cam.y) * this.cam.z + cy]
   }
 
   private toWorld(px: number, py: number): [number, number] {
-    const cx = (this.W - this.inset.right) / 2, cy = (this.H - this.inset.bottom) / 2
+    const cx = (this.W - this.insetNow.right) / 2, cy = (this.H - this.insetNow.bottom) / 2
     return [(px - cx) / this.cam.z + this.cam.x, (py - cy) / this.cam.z + this.cam.y]
   }
 
@@ -571,18 +578,16 @@ export class Field {
   }
 
   private drawNode(
-    n: VNode, x: number, y: number, r: number, alpha: number, selected: boolean,
+    n: VNode, x: number, y: number, r: number, alpha: number, _selected: boolean,
     lobes?: { ux: number; uy: number; off: number },
   ) {
     if (alpha <= 0.01 || r < 0.5) return
     // off screen: skip (glow reaches 2.1r, plus a dividing cell's lobe offset)
-    const reach = r * 2.1 + (lobes?.off ?? 0)
+    const reach = r * 1.7 + (lobes?.off ?? 0)
     if (x + reach < 0 || y + reach < 0 || x - reach > this.W || y - reach > this.H) return
     const { paint } = this
-    const f = fillOf(n.total, n.mid), sp = n.sp
-    const rot = this.t * 0.12 * n.spin + n.phase
+    const sp = n.sp
     const drift = this.t * 0.02 * n.spin + n.phase // the body itself turns very slowly
-    const boost = selected ? 1.8 : 1
     if (lobes) {
       // dividing: one glow, a body in each lobe; the outline below is the pinched membrane
       const { ux, uy, off } = lobes
@@ -591,13 +596,21 @@ export class Field {
         const lx = x + ux * off * sgn, ly = y + uy * off * sgn
         paint.halo(lx, ly, r, sp, alpha * 0.6)
         paint.body(lx, ly, r, sp, n.variant, drift, alpha)
-        paint.spiral(lx, ly, r, f, rot, sp, alpha)
       }
     } else {
+      const boost = 1 + 0.5 * n.lit
       paint.glow(x, y, r, sp, alpha, boost)
       paint.halo(x, y, r, sp, alpha, boost)
       paint.body(x, y, r, sp, n.variant, drift, alpha)
-      paint.spiral(x, y, r, f, rot, sp, alpha)
+      if (n.lit > 0.01) {
+        // selected: light blooms from the middle of the cell, then breathes slowly
+        const core = hex(SPECIES[sp].core)
+        const breathe = 0.88 + 0.12 * Math.sin(this.t * 1.3)
+        const k = n.lit * breathe * alpha
+        paint.speck(x, y, r * 1.25 * (0.6 + 0.4 * n.lit), core, 0.38 * k)
+        paint.speck(x, y, r * 0.55 * (0.5 + 0.5 * n.lit), core, 0.7 * k)
+        paint.speck(x, y, r * 0.2, 0xffffff, 0.75 * k)
+      }
     }
     const scale = Math.max(0.6, Math.min(1.6, this.cam.z))
     const other = hex(SPECIES[sp].speck), gold = hsl(42, 100, 70)
@@ -609,9 +622,9 @@ export class Field {
     }
     paint.outline(
       this.membranePts(n, x, y, r),
-      selected ? 0xffffff : hex(SPECIES[sp].rim),
-      (selected ? 0.85 : 0.22) * alpha,
-      selected ? 2 : 1,
+      hex(SPECIES[sp].rim),
+      0.22 * alpha,
+      1,
     )
   }
 
@@ -667,7 +680,3 @@ function radiusOf(total: number) {
 }
 
 /** The roll curve's position, 0 to 1, from the node's fill and midpoint (mirrors the contract). */
-function fillOf(total: number, mid: number) {
-  const r = total / Math.max(mid, 1e-9)
-  return (r * r) / (r * r + 1)
-}

@@ -19,7 +19,6 @@ installCellTexture()
 type Mode = 'aquarium' | 'deep'
 // Bottom sheet only on narrow screens held upright; a phone held sideways gets the side panel.
 const NARROW = '(max-width: 720px) and (orientation: portrait)'
-const sideW = () => (window.innerWidth < 800 ? 300 : 360) // keep in step with --side in app.css
 const SHEET_H: Record<Sheet, number> = { peek: 0.22, half: 0.52, full: 0.92 }
 
 export default function App() {
@@ -67,7 +66,7 @@ export default function App() {
     const field = fieldRef.current
     if (!field) return
     field.selected = id
-    if (id == null) return setSel(null)
+    if (id == null) { field.fitAll(); return setSel(null) }
     refreshSelected(id)
     setMode('deep')
     setTab('node')
@@ -90,7 +89,7 @@ export default function App() {
     const detach = attachGestures(canvas, {
       onTap: (x, y) => {
         const hit = field.pick(x, y)
-        if (hit) return selectRef.current(hit.id)
+        if (hit) { field.focus(hit.id); return selectRef.current(hit.id) }
         // a tap on open water closes the menu and returns to the aquarium
         selectRef.current(null)
         setMode('aquarium')
@@ -186,7 +185,7 @@ export default function App() {
     if (!field) return
     if (mode === 'aquarium') field.setInset(0, 0)
     else if (narrow) field.setInset(0, Math.round(window.innerHeight * SHEET_H[sheet]))
-    else field.setInset(sideW() + 16, 0)
+    else field.setInset(0, 0) // desktop: the menu opens over the view; the view itself stays put
     field.setAutoReturn(mode === 'aquarium' ? 15000 : null)
   }, [mode, narrow, sheet])
 
