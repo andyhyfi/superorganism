@@ -14,6 +14,15 @@ const ZMIN = 0.15
 const ZMAX = 6
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 
+// Cells in a petri dish of very slowly moving water. Speeds are world units per second.
+const WATER = {
+  current: 5, // top speed of the drifting water (very slow)
+  drag: 0.35, // how quickly a cell settles back into the water's drift after a bump
+  bounce: 0.55, // how springy a bump is (0 = stops dead, 1 = perfect bounce)
+  gap: 6, // space kept between membranes
+  room: 1.9, // dish size relative to the cells it holds (bigger = more open water)
+}
+
 // Camera feel: lazy and comfortable, like moving underwater. Higher ease = snappier.
 // ease/followEase/autoEase are rates per second (time to settle ~ 3 / rate seconds).
 // The camera is a spring through water: it eases in, travels, and eases to a stop (no snap).
@@ -269,7 +278,7 @@ export class Field {
       return {
         id,
         x: n.x + ux * off * s, y: n.y + uy * off * s,
-        vx: ux * 0.35 * s, vy: uy * 0.35 * s,
+        vx: ux * 18 * s, vy: uy * 18 * s, // the halves part gently, then the water takes over
         r: rc, total: n.total / 2, mid: n.mid,
         hue: n.hue + (id % 2 ? 9 : -9),
         sp: id % 2 === 0 ? (n.sp + 1 + (id % 5)) % SPECIES.length : n.sp, variant: id,
@@ -285,28 +294,71 @@ export class Field {
     if (this.follow === n.id) this.follow = c0 // keep following the line: first child
   }
 
+  private dishR = 0
+
+  /** How far a cell reaches from its center (a dividing cell is stretched along its axis). */
+  private reach(n: VNode) {
+    return n.r * (n.splitting ? 1.52 : 1.03)
+  }
+
   private step(dt: number) {
-    const f60 = dt * 60
+    dt = Math.min(dt, 0.05) // a long pause (background tab) must not fling cells
+    const t = this.t
+    const toWater = 1 - Math.exp(-dt * WATER.drag)
     for (const n of this.nodes.values()) {
       if (!n.splitting) n.r += (radiusOf(n.total) - n.r) * Math.min(1, dt * 1.5)
       n.alpha += (1 - n.alpha) * Math.min(1, dt * 1.2)
-      n.vx += (-n.x * 0.00002 + Math.sin(this.t * 0.11 + n.phase) * 0.0016) * f60
-      n.vy += (-n.y * 0.00003 + Math.cos(this.t * 0.09 + n.phase) * 0.0016) * f60
+      // very slow water: a gentle swirling current that changes over minutes
+      const cx = Math.sin(n.y * 0.004 + t * 0.05) + 0.6 * Math.sin(n.x * 0.007 - t * 0.037 + 1.3)
+      const cy = Math.cos(n.x * 0.004 - t * 0.045) + 0.6 * Math.cos(n.y * 0.006 + t * 0.031 + 2.1)
+      n.vx += (cx * WATER.current / 1.6 - n.vx) * toWater
+      n.vy += (cy * WATER.current / 1.6 - n.vy) * toWater
+      n.x += n.vx * dt
+      n.y += n.vy * dt
     }
+
+    // the dish: sized to the cells it holds, resizing slowly
     const list = [...this.nodes.values()]
-    for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
-      const a = list[i], b = list[j]
-      const dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy) || 0.01
-      const min = (a.r + b.r) * 1.5 + 24
-      if (d < min) {
-        const f = ((min - d) / min) * 0.02 * f60, ux = dx / d, uy = dy / d
-        a.vx -= ux * f; a.vy -= uy * f; b.vx += ux * f; b.vy += uy * f
+    let area = 0
+    for (const n of list) area += (this.reach(n) + WATER.gap) ** 2
+    const want = Math.sqrt(area) * WATER.room + 40
+    // grows at once when cells need room (so it never squeezes them together), shrinks slowly
+    this.dishR = !this.dishR || want > this.dishR ? want : this.dishR + (want - this.dishR) * Math.min(1, dt * 0.2)
+
+    // cells never overlap: push apart, then bounce (a few passes settle crowded spots)
+    for (let pass = 0; pass < 4; pass++) {
+      for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+        const a = list[i], b = list[j]
+        let dx = b.x - a.x, dy = b.y - a.y
+        let d = Math.hypot(dx, dy)
+        if (d < 1e-6) { dx = 1; dy = 0; d = 1e-6 }
+        const min = this.reach(a) + this.reach(b) + WATER.gap
+        if (d >= min) continue
+        const ux = dx / d, uy = dy / d
+        const ma = a.r * a.r, mb = b.r * b.r, wa = mb / (ma + mb), wb = ma / (ma + mb)
+        const over = min - d
+        a.x -= ux * over * wa; a.y -= uy * over * wa
+        b.x += ux * over * wb; b.y += uy * over * wb
+        const vn = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy
+        if (vn < 0 && pass === 0) {
+          const jn = (-(1 + WATER.bounce) * vn) / (1 / ma + 1 / mb)
+          a.vx -= (jn / ma) * ux; a.vy -= (jn / ma) * uy
+          b.vx += (jn / mb) * ux; b.vy += (jn / mb) * uy
+        }
+      }
+      // the dish wall
+      for (const n of list) {
+        const d = Math.hypot(n.x, n.y) || 1e-6
+        const lim = this.dishR - this.reach(n)
+        if (d <= lim) continue
+        const ux = n.x / d, uy = n.y / d
+        n.x = ux * Math.max(0, lim); n.y = uy * Math.max(0, lim)
+        const vr = n.vx * ux + n.vy * uy
+        if (vr > 0) { n.vx -= (1 + WATER.bounce) * vr * ux; n.vy -= (1 + WATER.bounce) * vr * uy }
       }
     }
+
     for (const n of list) {
-      const damp = Math.pow(0.985, f60)
-      n.vx *= damp; n.vy *= damp
-      n.x += n.vx * f60; n.y += n.vy * f60
       for (const b of n.bubbles) {
         b.a += b.w * dt * n.spin * 0.5
         b.in = b.out ? Math.max(0, b.in - dt * 0.9) : Math.min(1, b.in + dt * 0.7)
