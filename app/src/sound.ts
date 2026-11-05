@@ -4,7 +4,7 @@
 // Tuning: the SOUND block below.
 
 const SOUND = {
-  master: 0.55, // overall volume
+  master: 0.275, // overall volume: halved from 0.55 by default (Andy)
   ambience: 0.0198, // the bed under everything (hum, pads, water): two 70% cuts from the first 0.22 (Andy)
   water: 0.035, // the water noise inside the bed: kept very low and dark, so it never sounds like static
   effects: 0.34, // events: cut 15%, then 20%, from the first 0.5 (Andy)
