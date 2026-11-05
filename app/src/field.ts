@@ -9,14 +9,15 @@ import { SPECIES, hex, speciesOf } from './species'
 const TAU = Math.PI * 2
 const rand = (a: number, b: number) => a + Math.random() * (b - a)
 const ease = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2)
-const SPLIT_SECONDS = 3.4
+const SPLIT_SECONDS = 2.6
 const ZMIN = 0.15
 const ZMAX = 6
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 
 // Cells in a petri dish of very slowly moving water. Speeds are world units per second.
 const WATER = {
-  drag: 0.35, // how quickly a cell settles back into the water's drift after a bump
+  drag: 0.35, // how quickly a mid-size cell settles back into the water's drift after a bump
+  dragSize: 30, // cells larger than this (world units) keep their momentum longer, smaller ones lose it sooner
   bounce: 0.55, // how springy a bump is (0 = stops dead, 1 = perfect bounce)
   gap: 3, // space kept between membranes
   room: 1.5, // dish size relative to the cells it holds (bigger = more open water)
@@ -365,13 +366,15 @@ export class Field {
   private finishSplit(n: VNode, ang: number, c0: number, c1: number) {
     const ux = Math.cos(ang), uy = Math.sin(ang)
     const rc = n.r * Math.SQRT1_2
-    const off = rc * 1.14
+    const off = rc * splitEnd(rc) // where the pinch left each half: just touching
+    const push = splitPushSpeed(n.r) // the speed the halves were already parting at
     const kids: VNode[] = [c0, c1].map((id, i) => {
       const s = i ? -1 : 1
       return {
         id,
         x: n.x + ux * off * s, y: n.y + uy * off * s,
-        vx: ux * WATER.splitPush * s, vy: uy * WATER.splitPush * s, // the halves part, then the water slows them
+        // the halves keep parting at the speed the pinch reached (no pause), on top of the parent's drift
+        vx: n.vx + ux * push * s, vy: n.vy + uy * push * s,
         r: rc, total: n.total / 2, mid: n.mid,
         hue: n.hue + (id % 2 ? 9 : -9),
         sp: n.sp, variant: id, lit: 0, dim: n.dim, // both halves keep the parent's color
@@ -399,7 +402,6 @@ export class Field {
   private step(dt: number) {
     dt = Math.min(dt, 0.05) // a long pause (background tab) must not fling cells
     const t = this.t
-    const toWater = 1 - Math.exp(-dt * WATER.drag)
     this.pulse *= Math.exp(-dt * SWIRL.pulseFade)
     // the bundle's size: the spin is full speed at its edge and slower inside
     let packed = 0
@@ -433,8 +435,9 @@ export class Field {
         const k = Math.max(0, Math.min(1, (rest - d) / 60)) * n.dim
         wx += ux * WATER.emptyDrift * k; wy += uy * WATER.emptyDrift * k
       }
-      n.vx += (wx - n.vx) * toWater
-      n.vy += (wy - n.vy) * toWater
+      const settle = 1 - Math.exp(-dt * WATER.drag * Math.min(3, WATER.dragSize / Math.max(n.r, 6)))
+      n.vx += (wx - n.vx) * settle
+      n.vy += (wy - n.vy) * settle
       n.x += n.vx * dt
       n.y += n.vy * dt
     }
@@ -457,12 +460,13 @@ export class Field {
         const min = this.reach(a) + this.reach(b) + WATER.gap
         if (d >= min) continue
         const ux = dx / d, uy = dy / d
+        // mass grows with area, so a big cell shoves a small one far and barely moves itself
         const ma = a.r * a.r, mb = b.r * b.r, wa = mb / (ma + mb), wb = ma / (ma + mb)
         const over = min - d
         a.x -= ux * over * wa; a.y -= uy * over * wa
         b.x += ux * over * wb; b.y += uy * over * wb
         const vn = (b.vx - a.vx) * ux + (b.vy - a.vy) * uy
-        if (vn < 0 && pass === 0) {
+        if (vn < 0) {
           const jn = (-(1 + WATER.bounce) * vn) / (1 / ma + 1 / mb)
           a.vx -= (jn / ma) * ux; a.vy -= (jn / ma) * uy
           b.vx += (jn / mb) * ux; b.vy += (jn / mb) * uy
@@ -860,10 +864,12 @@ export class Field {
         continue
       }
       // Division: one membrane stretches, pinches at the waist, and parts (look test, approved).
-      const p = ease(Math.min(1, s.p)), ux = Math.cos(s.ang), uy = Math.sin(s.ang)
+      const raw = Math.min(1, s.p)
+      const p = ease(raw), ux = Math.cos(s.ang), uy = Math.sin(s.ang)
       const rc = r * (1 - p * (1 - Math.SQRT1_2))
-      if (p < 0.8) {
-        const off = rc * (p / 0.8) * 0.985
+      {
+        // the lobes part slowly, then faster and faster, and hand off to the physics at full speed
+        const off = rc * Math.pow(raw, splitExponent(n.r)) * splitEnd(rc / z)
         const k = 7 / rc
         this.shapeFn = a => {
           const c = Math.cos(a - s.ang), sn = Math.sin(a - s.ang)
@@ -874,14 +880,27 @@ export class Field {
         this.shapeR0 = rc
         this.drawNode(n, x, y, rc, n.alpha, false, { ux, uy, off })
         this.shapeFn = null
-      } else {
-        const off = rc * (1 + ((p - 0.8) / 0.2) * 0.14)
-        this.drawNode(n, x + ux * off, y + uy * off, rc, n.alpha, false)
-        this.drawNode(n, x - ux * off, y - uy * off, rc, n.alpha, false)
       }
     }
     this.paint.end()
   }
+}
+
+/** How far apart (in radii) the halves sit at the hand-off: membranes just touching, so the
+ *  no-overlap rule takes over without a jump. */
+function splitEnd(rc: number) {
+  return 1.03 + WATER.gap / (2 * Math.max(rc, 1))
+}
+
+/** How sharply a split's lobes accelerate apart. They start moving at once, speed up through the
+ *  pinch, and hand off to the physics at the speed they reached, so the parting never pauses. */
+function splitExponent(r: number) {
+  return Math.max(1.6, Math.min(3, (WATER.splitPush * SPLIT_SECONDS) / (r * Math.SQRT1_2 * splitEnd(r * Math.SQRT1_2))))
+}
+
+/** The speed (world units per second) the halves are parting at when they become separate cells. */
+function splitPushSpeed(r: number) {
+  return (r * Math.SQRT1_2 * splitEnd(r * Math.SQRT1_2) * splitExponent(r)) / SPLIT_SECONDS
 }
 
 /** Node radius in world units from its USDC total. Square root keeps area proportional to value. */
