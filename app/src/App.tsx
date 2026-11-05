@@ -335,7 +335,7 @@ export default function App() {
 
       <div className={ctrlCls}>
         <button aria-label="Zoom out" onClick={() => fieldRef.current?.zoomBy(0.8)}><Minus size={20} strokeWidth={2.25} /></button>
-        <button aria-label="Fit network" onClick={() => fieldRef.current?.fitAll()}><Maximize2 size={18} strokeWidth={2.25} /></button>
+        <button aria-label="Fit colony" onClick={() => fieldRef.current?.fitAll()}><Maximize2 size={18} strokeWidth={2.25} /></button>
         <button aria-label="Zoom in" onClick={() => fieldRef.current?.zoomBy(1.25)}><Plus size={20} strokeWidth={2.25} /></button>
         <button aria-label={soundOn ? 'Sound off' : 'Sound on'} aria-pressed={soundOn} onClick={() => sound.toggle()}>
           {soundOn ? <Volume2 size={19} strokeWidth={2.25} /> : <VolumeX size={19} strokeWidth={2.25} />}
@@ -382,8 +382,8 @@ function friendly(e: unknown): string {
   if (/insufficient|exceeds balance/i.test(m)) return 'Not enough USDC in your wallet.'
   if (/rejected|denied/i.test(m)) return 'Cancelled.'
   if (/AboveMaxDeposit/.test(m)) return 'The most you can feed at once is 1,000 USDC.'
-  if (/AboveUserLimit/.test(m)) return 'You can hold at most 1,000 USDC in the network.'
-  if (/revert/i.test(m)) return 'The network refused this. Nothing was sent.'
+  if (/AboveUserLimit/.test(m)) return 'You can feed at most 1,000 USDC in total.'
+  if (/revert/i.test(m)) return 'The colony refused this. Nothing was sent.'
   return m.split('\n')[0].slice(0, 120)
 }
 

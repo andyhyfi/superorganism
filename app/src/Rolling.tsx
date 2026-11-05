@@ -23,7 +23,9 @@ export function Rolling({ value }: { value: bigint }) {
       if (p < 1) raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
+    // a hidden tab gets no animation frames: land on the value anyway, so it is never left wrong
+    const land = window.setTimeout(() => { now.current = target; setShown(target) }, ROLL_MS + 200)
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(land) }
   }, [target])
   return <>{fmtUsd(shown)}</>
 }

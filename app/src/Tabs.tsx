@@ -64,7 +64,7 @@ export function NodeTab(p: DeepProps) {
       <div className="hero">
         <div className="cell-name">{nameOf(s.id)}</div>
         <div className="label">
-          <span>{t('cell.balance')}</span>
+          <span />
           <button className="text-btn" onClick={() => p.onFocus(s.id)}>{t('cell.observe')}</button>
         </div>
         <div className="big"><Rolling value={s.energy} /></div>
@@ -107,7 +107,6 @@ export function NodeTab(p: DeepProps) {
           <Gate id="cell.fillCheck" c={c}><Row k={t('cell.fillCheck')} v={fmtPct(s.roll)} /></Gate>
           <Gate id="cell.divideOdds" c={c}><Row k={t('cell.divideOdds')} v={`1 in ${p.odds}`} /></Gate>
         </div>
-        <Gate id="cell.divideExplainer" c={c}><p className="foot">{t('cell.divideExplainer')}</p></Gate>
       </Gate>
 
       {loansHere.length > 0 && (
@@ -155,7 +154,6 @@ export function NodeTab(p: DeepProps) {
             ))}
           </div>
         </div>
-        <p className="foot">{t('cell.lineageExplainer')}</p>
       </Gate>
     </>
   )
@@ -178,12 +176,11 @@ export function NetworkTab(p: DeepProps) {
   const meta = [
     `${live.length} ${t('net.counts')}`,
     shown('net.splits', c) && `${(p.nodes.length - 1) / 2} ${t('net.splits')}`,
-    shown('net.generations', c) && `${maxDepth} ${t('net.generations')}`,
+    shown('net.generations', c) && `${t('net.generations')} ${maxDepth}`,
   ].filter(Boolean).join(' · ')
   return (
     <>
       <div className="hero">
-        <div className="label"><span>{t('net.held')}</span></div>
         <div className="big"><Rolling value={total} /><small>USDC</small></div>
         <div className="meta">{meta}</div>
       </div>
@@ -228,12 +225,10 @@ export function YoursTab(p: DeepProps) {
   return (
     <>
       <div className="hero">
-        <div className="label"><span>{t('you.balance')}</span></div>
         <div className="big"><Rolling value={sum} /><small>USDC</small></div>
-        <div className="meta">{fmtUsd(p.wallet)} USDC {t('you.wallet')}</div>
       </div>
       {!held.length && !mine.length ? (
-        <Empty title={t('you.empty')} text={t('you.emptyHint')} />
+        <Empty />
       ) : !held.length ? null : (
         <>
           <div className="group membrane">
@@ -293,7 +288,7 @@ export function FeedTab(p: DeepProps) {
     .filter(e => !('user' in e) || e.user.toLowerCase() !== me)
     .slice(0, 80)
   if (!Object.values(see).some(Boolean)) return <Empty />
-  if (!rows.length) return <Empty title={t('feed.empty')} text="" />
+  if (!rows.length) return <Empty />
   return <FeedList p={p} rows={rows} />
 }
 
