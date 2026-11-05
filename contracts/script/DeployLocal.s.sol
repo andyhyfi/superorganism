@@ -86,15 +86,23 @@ contract DeployLocal is Script {
         }
         vm.stopBroadcast();
 
-        // Seed the root with deposits from accounts 1 to 3 so the field is not empty.
-        uint256[3] memory seeds = [uint256(40e6), 25e6, 60e6];
-        for (uint256 i = 0; i < seeds.length; ++i) {
-            uint256 key = vm.deriveKey(MNEMONIC, uint32(i + 1));
+        // Seed the network: 7 live cells, each with a few deposits. The test dials force a split
+        // on each seeding deposit (and turn events off), then go back to the real rules.
+        vm.startBroadcast(deployerKey);
+        evo.setDemoDials(1_000_000, 1);
+        vm.stopBroadcast();
+        uint256[6] memory grow = [uint256(240e6), 90e6, 70e6, 60e6, 50e6, 40e6];
+        for (uint256 i = 0; i < grow.length; ++i) {
+            uint256 key = vm.deriveKey(MNEMONIC, uint32(1 + (i % 3)));
+            uint256[] memory live = evo.liveNodes();
             vm.startBroadcast(key);
-            usdc.approve(address(evo), type(uint256).max);
-            evo.deposit(0, seeds[i]);
+            if (i < 3) usdc.approve(address(evo), type(uint256).max);
+            evo.deposit(live[i % live.length], grow[i]);
             vm.stopBroadcast();
         }
+        vm.startBroadcast(deployerKey);
+        evo.setDemoDials(0, 0);
+        vm.stopBroadcast();
 
         string memory obj = "local";
         vm.serializeUint(obj, "chainId", block.chainid);

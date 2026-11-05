@@ -285,14 +285,21 @@ export default function App() {
       </div>
 
       {/* money: always on screen, in both modes */}
-      <div className="money glass membrane">
+      <div
+        className="money glass membrane"
+        role="button"
+        tabIndex={0}
+        aria-label={t('hud.myCells')}
+        onClick={() => { setMode('deep'); setTab('yours'); if (narrow && sheet === 'peek') setSheet('half') }}
+        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setMode('deep'); setTab('yours') } }}
+      >
         <span className="m"><span className="sub">{t('hud.wallet')}</span><span className="num">{fmtUsd(wallet)}</span></span>
         <span className="divider" />
         <span className="m"><span className="sub">{t('hud.deposited')}</span><span className="num gold">{fmtUsd(held)}</span></span>
-        <button className="mine cell-quiet" onClick={() => { setMode('deep'); setTab('yours') }} aria-label={t('hud.myCells')}>
+        <span className="mine cell-quiet" aria-hidden="true">
           <span className="orbs">{heldIds.slice(0, 3).map(id => <Orb key={id} colors={fieldRef.current?.colorsOf(id)} size={14} />)}</span>
           {heldIds.length}
-        </button>
+        </span>
       </div>
 
       <div className={ctrlCls}>

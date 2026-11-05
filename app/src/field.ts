@@ -16,13 +16,27 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
 
 // Cells in a petri dish of very slowly moving water. Speeds are world units per second.
 const WATER = {
-  current: 5, // top speed of the drifting water (very slow)
   drag: 0.35, // how quickly a cell settles back into the water's drift after a bump
   bounce: 0.55, // how springy a bump is (0 = stops dead, 1 = perfect bounce)
-  gap: 6, // space kept between membranes
-  room: 1.9, // dish size relative to the cells it holds (bigger = more open water)
+  gap: 3, // space kept between membranes
+  room: 1.5, // dish size relative to the cells it holds (bigger = more open water)
   emptyDrift: 9, // how fast an emptied cell drifts outward (px/s)
   splitPush: 70, // how hard the two halves of a split push apart (they glide off, then the water slows them)
+}
+
+// The galaxy swirl: the whole network turns slowly clockwise around the center and is drawn
+// gently inward. A split or a withdrawal makes the network breathe out from the center; then the
+// swirl slowly gathers it back. Speeds are world units per second.
+const SWIRL = {
+  spin: 7, // clockwise speed at the rim (inner cells turn more slowly)
+  pull: 9, // inward drift toward the center; cells pack into one bundle and bump each other
+  core: 30, // the pull fades out only inside this distance from the center
+  noise: 1.2, // a little leftover current, so the motion never looks mechanical
+  splitPulse: 1, // breath-out strength from a split
+  withdrawPulse: 0.5, // breath-out strength from a withdrawal
+  pulsePush: 26, // outward speed at full breath
+  pulseFade: 0.45, // how quickly a breath fades (lower = longer)
+  maxPulse: 1.6,
 }
 
 /** A cell at or below this many USDC counts as empty: it goes dark and drifts to the edge. */
@@ -122,6 +136,7 @@ export class Field {
   onFrame: (() => void) | null = null
   private links: LoanLink[] = []
   private flows: Flow[] = []
+  private pulse = 0 // the breath-out level, from splits and withdrawals
 
   constructor(private host: HTMLElement, you: Address) {
     this.paint = new Painter(host)
@@ -202,6 +217,11 @@ export class Field {
     this.links = links
   }
 
+  /** The network breathes out from the center (splits, withdrawals). */
+  private breathe(k: number) {
+    this.pulse = Math.min(SWIRL.maxPulse, this.pulse + k)
+  }
+
   private flow(from: number, to: number, amount: number) {
     const a = this.nodes.get(from), b = this.nodes.get(to)
     if (!a || !b || from === to) return
@@ -223,6 +243,7 @@ export class Field {
         if (!instant) n.total += amount
         this.trim(n)
       } else if (e.kind === 'withdraw') {
+        if (!instant) this.breathe(SWIRL.withdrawPulse)
         const n = this.nodes.get(e.node)
         if (!n) continue
         let left = Number(e.amount) / 1e6
@@ -238,7 +259,10 @@ export class Field {
         const n = this.nodes.get(e.parent)
         if (!n) continue
         if (instant) this.finishSplit(n, rand(0, TAU), e.c0, e.c1)
-        else if (!n.splitting) n.splitting = { ang: rand(0, TAU), p: 0, c0: e.c0, c1: e.c1 }
+        else if (!n.splitting) {
+          n.splitting = { ang: rand(0, TAU), p: 0, c0: e.c0, c1: e.c1 }
+          this.breathe(SWIRL.splitPulse)
+        }
       } else if (e.kind === 'loan' && !instant) {
         this.flow(e.lender, e.borrower, Number(e.amount) / 1e6)
       }
@@ -376,6 +400,11 @@ export class Field {
     dt = Math.min(dt, 0.05) // a long pause (background tab) must not fling cells
     const t = this.t
     const toWater = 1 - Math.exp(-dt * WATER.drag)
+    this.pulse *= Math.exp(-dt * SWIRL.pulseFade)
+    // the bundle's size: the spin is full speed at its edge and slower inside
+    let packed = 0
+    for (const n of this.nodes.values()) if (n.total > EMPTY) packed += (this.reach(n) + WATER.gap) ** 2
+    const rest = Math.max(60, Math.sqrt(packed))
     for (const n of this.nodes.values()) {
       if (!n.splitting) n.r += (radiusOf(n.total) - n.r) * Math.min(1, dt * 1.5)
       n.alpha += (1 - n.alpha) * Math.min(1, dt * 1.2)
@@ -384,7 +413,17 @@ export class Field {
       // very slow water: a gentle swirling current that changes over minutes
       const cx = Math.sin(n.y * 0.004 + t * 0.05) + 0.6 * Math.sin(n.x * 0.007 - t * 0.037 + 1.3)
       const cy = Math.cos(n.x * 0.004 - t * 0.045) + 0.6 * Math.cos(n.y * 0.006 + t * 0.031 + 2.1)
-      let wx = cx * WATER.current / 1.6, wy = cy * WATER.current / 1.6
+      let wx = cx * SWIRL.noise / 1.6, wy = cy * SWIRL.noise / 1.6
+      {
+        // galaxy swirl: clockwise on screen (y points down), drawn in, breathing out on events
+        const d = Math.hypot(n.x, n.y) || 1e-6, ux = n.x / d, uy = n.y / d
+        const turn = SWIRL.spin * Math.min(1, d / rest)
+        // every live cell is drawn toward the center, so they bundle and press on each other
+        const inward = n.total > EMPTY ? SWIRL.pull * Math.min(1, d / SWIRL.core) : 0
+        const out = SWIRL.pulsePush * this.pulse * Math.min(1, d / 80 + 0.3)
+        wx += -uy * turn + ux * (out - inward)
+        wy += ux * turn + uy * (out - inward)
+      }
       if (n.dim > 0.05 && this.view.hw) {
         // empty: drifts slowly outward until it rests just inside the edge of the screen
         const dx = n.x - this.view.x, dy = n.y - this.view.y, d = Math.hypot(dx, dy) || 1
