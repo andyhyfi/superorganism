@@ -96,6 +96,9 @@ export default function App() {
       },
       onPan: (dx, dy) => field.pan(dx, dy),
       onZoom: (x, y, f) => field.zoomAt(x, y, f),
+      onDown: () => field.hold(),
+      onPanEnd: () => field.release(),
+      onScroll: (dx, dy) => field.pan(dx, dy, false),
     })
 
     const boot = async () => {

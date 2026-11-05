@@ -12,6 +12,25 @@ const SPLIT_SECONDS = 3.4
 const ZMIN = 0.15
 const ZMAX = 6
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v))
+
+// Camera feel: lazy and comfortable, like moving underwater. Higher ease = snappier.
+// ease/followEase/autoEase are rates per second (time to settle ~ 3 / rate seconds).
+// The camera is a spring through water: it eases in, travels, and eases to a stop (no snap).
+// Each value is the spring's stiffness; it settles in roughly 6 / value seconds.
+const CAM = {
+  ease: 4.2, // manual drag/zoom catching up to where the user sent it (~1.4 s)
+  followEase: 2.8, // gliding over to a node you tapped (~2 s)
+  autoEase: 1.1, // Aquarium drifting back to show the whole network (~5 s)
+  glideCarry: 0.7, // how much of a flick's speed carries on after release
+  glideDecay: 2.4, // how quickly that drift slows (lower = longer glide)
+}
+
+/** One axis of a critically damped spring: moves `p` toward `goal`, easing in and out. */
+function spring(p: number, v: number, goal: number, w: number, dt: number): [number, number] {
+  const a = w * w * (goal - p) - 2 * w * v
+  v += a * dt
+  return [p + v * dt, v]
+}
 const MAX_BUBBLES = 60
 
 type Bubble = { a: number; d: number; amount: number; mine: boolean; w: number; in: number; out: boolean; user: string }
@@ -47,6 +66,7 @@ export class Field {
   private autoReturnMs: number | null = 15000
   private inset = { right: 0, bottom: 0 }
   private zoomTarget: number | null = null
+  private vel = { x: 0, y: 0, z: 0 } // camera speed; zoom speed is in log space
   private raf = 0
   private last = 0
   private you: string
@@ -299,22 +319,29 @@ export class Field {
     if (this.camMode === 'manual' && this.autoReturnMs != null && performance.now() - this.lastInput > this.autoReturnMs) {
       this.camMode = 'auto'
     }
+    if (this.camMode === 'manual') {
+      // Underwater: the view drifts toward where the user sent it and settles gently.
+      if (!this.dragging && (this.glide.x || this.glide.y)) {
+        this.goal.x += this.glide.x * dt
+        this.goal.y += this.glide.y * dt
+        const d = Math.exp(-dt * CAM.glideDecay)
+        this.glide.x *= d; this.glide.y *= d
+        if (Math.hypot(this.glide.x, this.glide.y) * this.cam.z < 2) this.glide = { x: 0, y: 0 }
+      }
+      this.moveCam(this.goal.x, this.goal.y, this.goal.z, CAM.ease, dt)
+      return
+    }
     if (this.camMode === 'follow') {
       const n = this.follow != null ? this.nodes.get(this.follow) : undefined
       if (!n) {
-        // followed node split or left: frame its children if they exist, else everything
         this.camMode = 'auto'
         this.follow = null
       } else {
-        const k = Math.min(1, dt * 2.2)
         const z = this.zoomTarget ?? Math.min(4, Math.min(vw, vh) * 0.32 / Math.max(n.r, 1))
-        this.cam.x += (n.x - this.cam.x) * k
-        this.cam.y += (n.y - this.cam.y) * k
-        this.cam.z += (z - this.cam.z) * k
+        this.moveCam(n.x, n.y, z, CAM.followEase, dt)
         return
       }
     }
-    if (this.camMode !== 'auto') return
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity
     for (const n of this.nodes.values()) {
       const pad = n.r * 1.6
@@ -323,22 +350,56 @@ export class Field {
     }
     const margin = 0.82
     const z = Math.min(1.6, (vw * margin) / (x1 - x0), (vh * margin) / (y1 - y0))
-    const k = Math.min(1, dt * 0.6) // slow, aquarium-paced camera
-    this.cam.x += ((x0 + x1) / 2 - this.cam.x) * k
-    this.cam.y += ((y0 + y1) / 2 - this.cam.y) * k
-    this.cam.z += (z - this.cam.z) * k
+    this.moveCam((x0 + x1) / 2, (y0 + y1) / 2, z, CAM.autoEase, dt)
+  }
+
+  /** Springs the camera toward a target. Zoom moves in log space so in and out feel even. */
+  private moveCam(x: number, y: number, z: number, w: number, dt: number) {
+    ;[this.cam.x, this.vel.x] = spring(this.cam.x, this.vel.x, x, w, dt)
+    ;[this.cam.y, this.vel.y] = spring(this.cam.y, this.vel.y, y, w, dt)
+    const [lz, vz] = spring(Math.log(this.cam.z), this.vel.z, Math.log(z), w, dt)
+    this.cam.z = Math.exp(lz)
+    this.vel.z = vz
   }
 
   // ------------------------------------------------------------- controls
+  // Input never moves the camera directly. It moves a goal; the camera eases toward it
+  // (updateCamera), and a released drag keeps gliding and slows to a stop.
 
-  /** Drag: move the view by screen pixels. */
-  pan(dx: number, dy: number) {
-    this.takeManual()
-    this.cam.x -= dx / this.cam.z
-    this.cam.y -= dy / this.cam.z
+  private goal = { x: 0, y: 0, z: 1 }
+  private glide = { x: 0, y: 0 } // world units per second
+  private dragging = false
+  private lastPan = 0
+
+  /** A finger or button went down on the field: catch the view (stop any glide). */
+  hold() {
+    this.glide = { x: 0, y: 0 }
   }
 
-  /** Zoom by `factor` around a screen point, keeping that point fixed. */
+  /** Move the view by screen pixels. `fromDrag` tracks speed so a release can glide. */
+  pan(dx: number, dy: number, fromDrag = true) {
+    this.takeManual()
+    const wx = -dx / this.goal.z, wy = -dy / this.goal.z
+    this.goal.x += wx
+    this.goal.y += wy
+    if (!fromDrag) return
+    this.dragging = true
+    const now = performance.now()
+    const t = Math.max(8, now - this.lastPan) / 1000
+    this.lastPan = now
+    const vx = wx / t, vy = wy / t
+    this.glide.x = this.glide.x * 0.6 + vx * 0.4
+    this.glide.y = this.glide.y * 0.6 + vy * 0.4
+  }
+
+  /** The drag ended: glide on with the recent speed, gently. */
+  release() {
+    this.dragging = false
+    if (performance.now() - this.lastPan > 90) this.glide = { x: 0, y: 0 } // finger rested before lifting
+    else { this.glide.x *= CAM.glideCarry; this.glide.y *= CAM.glideCarry }
+  }
+
+  /** Zoom by `factor` around a screen point; that point ends up where it started. */
   zoomAt(px: number, py: number, factor: number) {
     if (this.camMode === 'follow') {
       this.zoomTarget = clamp((this.zoomTarget ?? this.cam.z) * factor, ZMIN, ZMAX)
@@ -346,11 +407,11 @@ export class Field {
       return
     }
     this.takeManual()
-    const [wx, wy] = this.toWorld(px, py)
-    this.cam.z = clamp(this.cam.z * factor, ZMIN, ZMAX)
-    const [nx, ny] = this.toWorld(px, py)
-    this.cam.x += wx - nx
-    this.cam.y += wy - ny
+    const cx = (this.W - this.inset.right) / 2, cy = (this.H - this.inset.bottom) / 2
+    const wx = (px - cx) / this.goal.z + this.goal.x, wy = (py - cy) / this.goal.z + this.goal.y
+    this.goal.z = clamp(this.goal.z * factor, ZMIN, ZMAX)
+    this.goal.x = wx - (px - cx) / this.goal.z
+    this.goal.y = wy - (py - cy) / this.goal.z
   }
 
   /** Zoom by `factor` around the center of the visible area. */
@@ -365,6 +426,7 @@ export class Field {
     this.camMode = 'follow'
     this.follow = id
     this.zoomTarget = null
+    this.glide = { x: 0, y: 0 }
     this.lastInput = performance.now()
   }
 
@@ -373,6 +435,7 @@ export class Field {
     this.camMode = 'auto'
     this.follow = null
     this.zoomTarget = null
+    this.glide = { x: 0, y: 0 }
   }
 
   /** Screen area covered by panels; the camera centers in what is left. */
@@ -395,9 +458,12 @@ export class Field {
 
   private takeManual() {
     if (this.camMode !== 'manual') {
+      // pick up from wherever the camera is now, mid-drift included
       this.camMode = 'manual'
       this.follow = null
       this.zoomTarget = null
+      this.goal = { ...this.cam }
+      this.glide = { x: 0, y: 0 }
     }
     this.lastInput = performance.now()
   }

@@ -6,6 +6,9 @@ export type GestureHandlers = {
   onDoubleTap: (x: number, y: number) => void
   onPan: (dx: number, dy: number) => void
   onZoom: (x: number, y: number, factor: number) => void
+  onDown?: () => void // a finger or button touched the field
+  onPanEnd?: () => void // the last finger lifted after a drag
+  onScroll?: (dx: number, dy: number) => void // two-finger trackpad scroll
 }
 
 const TAP_SLOP = 6 // px a press may wander and still count as a tap
@@ -37,6 +40,7 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers): () => void 
     }
     const p = local(e)
     pts.set(e.pointerId, p)
+    h.onDown?.()
     if (pts.size === 1) {
       moved = false
       downAt = performance.now()
@@ -69,6 +73,7 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers): () => void 
     if (!pts.has(e.pointerId)) return
     pts.delete(e.pointerId)
     if (pts.size < 2) pinch = { d: 0, x: 0, y: 0 }
+    if (pts.size === 0 && moved) h.onPanEnd?.()
     if (cancelled || pts.size > 0 || moved || performance.now() - downAt > TAP_MS) return
     const p = local(e)
     const now = performance.now()
@@ -84,9 +89,13 @@ export function attachGestures(el: HTMLElement, h: GestureHandlers): () => void 
   const wheel = (e: WheelEvent) => {
     e.preventDefault()
     const p = local(e)
-    // Trackpad pinch arrives as a wheel event with ctrlKey set; it needs more gain.
-    const factor = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015))
-    h.onZoom(p.x, p.y, factor)
+    // Trackpad pinch arrives as a wheel event with ctrlKey set.
+    if (e.ctrlKey) return h.onZoom(p.x, p.y, Math.exp(-e.deltaY * 0.01))
+    // Two-finger trackpad scroll moves the view; a mouse wheel (line steps, or big
+    // whole-number vertical steps) zooms.
+    const mouseWheel = e.deltaMode !== 0 || (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 50)
+    if (!mouseWheel && h.onScroll) return h.onScroll(-e.deltaX, -e.deltaY)
+    h.onZoom(p.x, p.y, Math.exp(-e.deltaY * 0.0015))
   }
 
   const onUp = (e: PointerEvent) => up(e)
