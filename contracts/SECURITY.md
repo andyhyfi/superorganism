@@ -41,6 +41,13 @@ Known limits, open before real funds:
 9. **Event fee.** Set at deployment. The real Gelato VRF price on Ink is not confirmed; 0.01 USDC is a local placeholder.
 10. **Dissipation griefing.** A 1 USDC deposit into an empty node restarts its 5-minute clock, so anyone can keep an empty node alive by paying deposits. This costs the griefer money and harms nobody's funds.
 
+## Planned change: epochs (decided 2026-11-06, not built)
+
+The current contract (v2) has no owner, admin, upgrade path or pause. The epoch design changes this rule to **no admin over money**:
+- One permanent **vault** holds all USDC. It has no owner, no admin, no upgrade and no pause. Withdrawal, ownership of claims and the fee cap live only in the vault and can never change.
+- A separate **rules** contract holds game rules only (objectives, Bloom chance, BLOOM amounts, mutations). Between epochs, a rules key can point the vault at a new rules contract. New rules are published at least 24 hours before the epoch starts.
+- The rules key can never move USDC, change claims, block withdrawals or raise fees above the vault's cap. Tests must prove this for any rules contract, including a hostile one.
+
 ## Before mainnet
 
 - Replace the randomness (limit 1).
