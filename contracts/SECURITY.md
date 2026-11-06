@@ -47,7 +47,7 @@ The current contract (v2) has no owner, admin, upgrade path or pause. The epoch 
 - One permanent **vault** holds all USDC. It has no owner, no admin, no upgrade and no pause. Withdrawal, ownership of claims and the fee cap live only in the vault and can never change.
 - A separate **rules** contract holds game rules only (objectives, Bloom chance, BLOOM amounts, mutations). Between epochs, a rules key can point the vault at a new rules contract. New rules are published at least 24 hours before the epoch starts.
 - Rules key holder: mainnet = 2-of-3 Safe multisig; testnet = a single key. The 24-hour delay is enforced by the contract, not by the key holder.
-- One exception: the rules key may raise the vault's per-player deposit maximum (starts at 10,000 USDC). Raise only, at most 10x per raise, effective 24 hours after it is announced. It can never lower it, so it can never trap funds.
+- One exception: the rules key may raise the vault's per-player deposit maximum (starts at 1,000 USDC). Raise only, at most 10x per raise, effective 24 hours after it is announced. It can never lower it, so it can never trap funds.
 - The rules key can never move USDC, change claims, block withdrawals or raise fees above the vault's cap. Tests must prove this for any rules contract, including a hostile one.
 
 ## Before mainnet
