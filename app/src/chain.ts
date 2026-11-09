@@ -208,36 +208,42 @@ export async function yourWallet(): Promise<bigint> {
   return publicClient.readContract({ address: USDC, abi: usdcAbi, functionName: 'balanceOf', args: [you.address] })
 }
 
-async function confirm(hash: Hex) {
+/** Where a transaction is: waiting on the wallet for approval, or sent and waiting for its receipt. */
+export type Stage = (s: 'approving' | 'confirming') => void
+const noStage: Stage = () => {}
+
+async function confirm(hash: Hex, stage: Stage = noStage) {
+  stage('confirming')
   const r = await publicClient.waitForTransactionReceipt({ hash })
   if (r.status !== 'success') throw new Error('Transaction reverted')
 }
 
 let approved = false
-async function ensureApproval() {
+async function ensureApproval(stage: Stage = noStage) {
   if (approved) return
   const allowance = await publicClient.readContract({
     address: USDC, abi: usdcAbi, functionName: 'allowance', args: [you.address, EVOLUTION],
   })
   if (allowance < 10n ** 15n) {
-    await confirm(await wallet.writeContract({ address: USDC, abi: usdcAbi, functionName: 'approve', args: [EVOLUTION, 2n ** 255n] }))
+    stage('approving')
+    await confirm(await wallet.writeContract({ address: USDC, abi: usdcAbi, functionName: 'approve', args: [EVOLUTION, 2n ** 255n] }), stage)
   }
   approved = true
 }
 
-export async function deposit(node: number, amount: bigint) {
-  await ensureApproval()
-  await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'deposit', args: [BigInt(node), amount] }))
+export async function deposit(node: number, amount: bigint, stage: Stage = noStage) {
+  await ensureApproval(stage)
+  await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'deposit', args: [BigInt(node), amount] }), stage)
 }
 
-export async function withdrawWhole(node: number) {
-  await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'withdrawAll', args: [[BigInt(node)]] }))
+export async function withdrawWhole(node: number, stage: Stage = noStage) {
+  await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'withdrawAll', args: [[BigInt(node)]] }), stage)
 }
 
 /** Withdraws `amount` of your claim from one node (the whole claim if amount equals it). */
-export async function withdrawAmount(node: number, amount: bigint, claim: bigint) {
-  if (amount >= claim) return withdrawWhole(node)
-  await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'withdraw', args: [BigInt(node), amount] }))
+export async function withdrawAmount(node: number, amount: bigint, claim: bigint, stage: Stage = noStage) {
+  if (amount >= claim) return withdrawWhole(node, stage)
+  await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'withdraw', args: [BigInt(node), amount] }), stage)
 }
 
 /** Your claims on the given nodes, in order. */
@@ -246,10 +252,10 @@ export async function claimsOf(ids: number[]): Promise<bigint[]> {
 }
 
 /** Withdraws every listed claim, in batches of 50 (the contract's cap per call). */
-export async function withdrawEverything(ids: number[]) {
+export async function withdrawEverything(ids: number[], stage: Stage = noStage) {
   for (let i = 0; i < ids.length; i += 50) {
     const batch = ids.slice(i, i + 50).map(BigInt)
-    await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'withdrawAll', args: [batch] }))
+    await confirm(await wallet.writeContract({ address: EVOLUTION, abi: evolutionAbi, functionName: 'withdrawAll', args: [batch] }), stage)
   }
 }
 

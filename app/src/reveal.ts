@@ -109,6 +109,7 @@ export const INFO = {
   'act.overUser': { label: 'Over your 1,000 total limit', rule: { always: true } },
   'act.nothingHere': { label: 'Nothing to draw here', rule: { always: true } },
   'you.cell': { label: 'Specimen', rule: { always: true } },
+  'link.lost': { label: 'Connection lost. Reconnecting…', rule: { always: true } }, // placeholder copy
   'hud.wallet': { label: 'Wallet', rule: { always: true } },
   'hud.deposited': { label: 'Fed', rule: { always: true } },
   'hud.myCells': { label: 'Tended', rule: { always: true } },

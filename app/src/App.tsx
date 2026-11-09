@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useSyncExternalStore } from 'react'
+import { useEffect, useReducer, useRef, useState, useCallback, useSyncExternalStore } from 'react'
 import {
   assertLocalChain, readNetwork, readEvents, claimOf, chancesAt, yourWallet, yourHeld, yourNetDeposited, deposit, withdrawAmount,
   claimsOf, withdrawEverything, feesOwed, splitOdds, limits as readLimits, readDials, setDials,
@@ -17,6 +17,7 @@ import { isRevealAll, setRevealAll, t } from './reveal'
 import { Orb } from './Tabs'
 import { TestDials } from './TestDials'
 import { Rolling } from './Rolling'
+import { tx, txIdle, txBusy, link, linkStart, linkDown, notice, NOTICE_MS, type TxKind } from './machines'
 import '@fontsource/capriola/latin-400.css' // display font (one weight, 400), self-hosted
 import './app.css'
 import './cell.css'
@@ -34,8 +35,14 @@ export default function App() {
   const nodesRef = useRef<ChainNode[]>([])
   const [nodes, setNodes] = useState<ChainNode[]>([])
   const [feed, setFeed] = useState<NetEvent[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [block, setBlock] = useState(0n)
+  // explicit state machines (machines.ts; map in app/STATE.md)
+  const [txState, txSend] = useReducer(tx, txIdle)
+  const [linkState, linkSend] = useReducer(link, linkStart)
+  const [note, noteSend] = useReducer(notice, null)
+  const block = linkState.phase === 'live' || linkState.phase === 'lost' ? linkState.block : 0n
+  const busy = txBusy(txState)
+  const busyRef = useRef(busy)
+  busyRef.current = busy
   const [sel, setSel] = useState<SelectedInfo | null>(null)
   const [claims, setClaims] = useState<Map<number, bigint>>(new Map())
   // sound: the engine holds the only on/off state; the button just shows it (stays right across
@@ -51,7 +58,6 @@ export default function App() {
   const [links, setLinks] = useState<LoanLink[]>([])
   const [dials, setDialsState] = useState<Dials>({ splitPpm: 0, eventPpm: 0 })
   const [amount, setAmount] = useState('')
-  const [busy, setBusy] = useState<string | null>(null)
 
   const [mode, setMode] = useState<Mode>('aquarium')
   const [tab, setTab] = useState<Tab>('network')
@@ -60,12 +66,11 @@ export default function App() {
   const [chrome, setChrome] = useState(true) // Aquarium's light overlay; H toggles
   const [idle, setIdle] = useState(false)
   const [, setReveal] = useState(0) // dev: re-render after toggling reveal-all
-  // first-time guide: showing or not, and which card
-  const [guide, setGuide] = useState(() => guideAtStart())
-  const [guideStep, setGuideStep] = useState(0)
-  const guideRef = useRef({ guide, guideStep })
-  guideRef.current = { guide, guideStep }
-  const closeGuide = useCallback(() => { setGuide(false); markGuideSeen() }, [])
+  // first-time guide: the card showing, or null when closed (one value, so "closed on card 3" cannot exist)
+  const [guideStep, setGuideStep] = useState<number | null>(() => (guideAtStart() ? 0 : null))
+  const guideRef = useRef(guideStep)
+  guideRef.current = guideStep
+  const closeGuide = useCallback(() => { setGuideStep(null); markGuideSeen() }, [])
 
   const refreshMine = async (all: ChainNode[]) => {
     const live = all.filter(n => !n.split && !n.gone).map(n => n.id)
@@ -97,7 +102,7 @@ export default function App() {
     setTab('node')
     // guide: the "tap a specimen" card moves on by itself once a specimen is tapped
     const g = guideRef.current
-    if (g.guide && GUIDE[g.guideStep]?.kind === 'tap') setGuideStep(g.guideStep + 1)
+    if (g != null && GUIDE[g]?.kind === 'tap') setGuideStep(g + 1)
   }, [refreshSelected])
   /** The selected cell split: the menu moves to its first child, keeping the tab and the amount. */
   const carry = useCallback((id: number) => {
@@ -193,15 +198,16 @@ export default function App() {
               playEvents(field, events)
               if (events.length) await refreshMine(fresh)
             }
-            setBlock(tip)
           }
+          linkSend({ type: 'ok', block: tip })
         } catch (e) {
           console.warn(e)
+          linkSend({ type: 'miss' })
         }
         await new Promise(r => setTimeout(r, 700))
       }
     }
-    boot().catch(e => setError(e instanceof Error ? e.message : String(e)))
+    boot().catch(e => linkSend({ type: 'fail', error: e instanceof Error ? e.message : String(e) }))
 
     return () => {
       cancelled = true
@@ -289,19 +295,37 @@ export default function App() {
   }, [mode, select])
 
   // ------------------------------------------------------------ actions
-  const act = async (label: string, fn: () => Promise<void>) => {
-    setBusy(label)
+  const say = useCallback((text: string) => noteSend({ type: 'show', text }), [])
+  // one transaction at a time: a second tap while one is in flight does nothing
+  const act = async (kind: TxKind, fn: (stage: (s: 'approving' | 'confirming') => void) => Promise<void>) => {
+    if (busyRef.current) return
+    busyRef.current = kind
+    txSend({ type: 'start', kind })
     try {
-      await fn()
+      await fn(stage => txSend({ type: 'stage', stage }))
       await refreshMine(nodesRef.current)
       if (sel) await refreshSelected(sel.id)
     } catch (e) {
-      setError(friendly(e))
-      setTimeout(() => setError(null), 5000)
+      say(friendly(e))
     } finally {
-      setBusy(null)
+      txSend({ type: 'end' })
     }
   }
+
+  // notices: a timed message clears itself; an old timer can never clear a newer message
+  useEffect(() => {
+    if (!note || note.sticky) return
+    const id = note.id
+    const timer = window.setTimeout(() => noteSend({ type: 'expire', id }), NOTICE_MS)
+    return () => clearTimeout(timer)
+  }, [note])
+  // the chain link: a boot failure stays on screen; a lost connection shows until it returns
+  const down = linkDown(linkState)
+  useEffect(() => {
+    if (linkState.phase === 'failed') noteSend({ type: 'show', text: linkState.error, sticky: true })
+    else if (down) noteSend({ type: 'show', text: t('link.lost'), sticky: true })
+    else noteSend({ type: 'clearSticky' })
+  }, [linkState.phase, down]) // eslint-disable-line react-hooks/exhaustive-deps
   const units = toUnits(amount)
   const heldIds = [...claims.entries()].filter(([, c]) => c > 0n).map(([id]) => id)
 
@@ -315,10 +339,17 @@ export default function App() {
     mode === 'deep' && narrow ? `sheet-${sheet}` : '',
   ].join(' ')
   const held = [...claims.values()].reduce((a, c) => a + c, 0n)
-  const guideKind = guide ? GUIDE[guideStep]?.kind : undefined
+  const guideKind = guideStep != null ? GUIDE[guideStep]?.kind : undefined
   const rootFee = nodes.find(n => n && !n.split && !n.gone)?.traits.feePpm ?? 0
   return (
-    <div className={`stage mode-${mode} ${guideKind ? `guide-${guideKind}` : ''}`}>
+    <div
+      className={`stage mode-${mode} ${guideKind ? `guide-${guideKind}` : ''}`}
+      // every machine's current state, readable by tests, agents and devtools without React internals
+      data-mode={mode} data-tab={tab} data-sheet={narrow ? sheet : 'side'} data-selected={sel?.id ?? ''}
+      data-tx={txState.phase === 'idle' ? 'idle' : `${txState.kind}:${txState.phase}`}
+      data-link={down ? 'down' : linkState.phase} data-guide={guideStep ?? 'closed'}
+      data-sound={soundOn ? 'on' : 'off'}
+    >
       <div ref={canvasRef} className="field" />
 
       <div className={`top ${overlay ? '' : 'hidden'}`}>
@@ -367,9 +398,9 @@ export default function App() {
           links={links} limits={lim} heldNet={heldNet} netDeposited={netDeposited}
           onSelect={id => { select(id); fieldRef.current?.focus(id) }}
           onFocus={id => fieldRef.current?.focus(id)}
-          onDeposit={() => sel && act('deposit', () => deposit(sel.id, units))}
-          onWithdraw={u => sel && act('withdraw', () => withdrawAmount(sel.id, u, sel.claim))}
-          onWithdrawAll={() => act('withdrawAll', () => withdrawEverything(heldIds))}
+          onDeposit={() => sel && act('deposit', stage => deposit(sel.id, units, stage))}
+          onWithdraw={u => sel && act('withdraw', stage => withdrawAmount(sel.id, u, sel.claim, stage))}
+          onWithdrawAll={() => act('withdrawAll', stage => withdrawEverything(heldIds, stage))}
           onClose={() => { select(null); setMode('aquarium') }}
           colorsOf={id => fieldRef.current?.colorsOf(id)}
         />
@@ -379,11 +410,11 @@ export default function App() {
         dials={dials}
         onChange={d => {
           setDialsState(d)
-          setDials(d).catch(e => { setError(friendly(e)); setTimeout(() => setError(null), 5000) })
+          setDials(d).catch(e => say(friendly(e)))
         }}
       />
 
-      {guide && (
+      {guideStep != null && (
         <Guide
           step={guideStep} feePpm={rootFee} catalyst={fmtUsd(lim.eventFee)}
           side={mode === 'deep' && !narrow}
@@ -402,7 +433,7 @@ export default function App() {
         />
       )}
 
-      {error && <div className="toast">{error}</div>}
+      {note && <div className="toast" role="status" key={note.id}>{note.text}</div>}
     </div>
   )
 }

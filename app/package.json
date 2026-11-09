@@ -8,7 +8,8 @@
     "build": "tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "abi": "node scripts/sync-abi.mjs",
-    "activity": "node scripts/activity.mjs"
+    "activity": "node scripts/activity.mjs",
+    "test:machines": "node --experimental-strip-types --no-warnings scripts/machines.test.ts"
   },
   "dependencies": {
     "@fontsource/capriola": "^5.3.0",
