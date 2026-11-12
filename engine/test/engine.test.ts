@@ -34,6 +34,29 @@ const fx = JSON.parse(fs.readFileSync(new URL('./sim-parity.json', import.meta.u
   for (const [m, p] of fx.div) ok(close(divChance(VALUES, m), p), `division chance parity at ${m}`)
 }
 
+// ---------------------------------------------------------------- easing objectives
+{
+  const st = create(1, 0)
+  st.level = 4
+  const full = objective(st).nReq
+  st.scale = 0.5
+  ok(objective(st).nReq === Math.round(full * 0.5), 'half the feeders: objectives ask about half')
+  st.scale = 0.01
+  st.level = 0
+  ok(objective(st).nReq === VALUES.objStart, 'objectives never shrink below the starting size')
+  // scale follows feeders against peak at epoch end
+  const s2 = create(2, 0)
+  for (let i = 0; i < 8; i++) { join(s2, `p${i}`, 0); feed(s2, `p${i}`, Number(Object.keys(s2.specs)[0]), 5, 0) }
+  tick(s2, 48 * H + 1)
+  ok(s2.peakFeeders === 8 && s2.scale === 1, 'peak feeders recorded, scale 1 at peak')
+  feed(s2, 'p0', Number(Object.keys(s2.specs)[0]), 5, 48 * H + 2)
+  feed(s2, 'p1', Number(Object.keys(s2.specs)[0]), 5, 48 * H + 3)
+  tick(s2, 48 * H + 2 * VALUES.targetHours[1] * H + 10)
+  ok(s2.history.length === 2 && s2.history[1].feeders === 2, 'second epoch had 2 feeders')
+  ok(s2.scale === Math.max(VALUES.easeFloor, 2 / 8), 'scale = feeders / peak, with the floor')
+  check(s2)
+}
+
 // ---------------------------------------------------------------- dENERGY rules
 {
   const st = create(7, 0)

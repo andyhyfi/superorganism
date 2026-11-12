@@ -22,6 +22,8 @@ export const VALUES = {
   kStartEra1: 2, // era 1: every specimen >= K energy from epoch 3; later eras from epoch 1
   kMin: 1,
   kGrowth: 1.5,
+  ease: true, // objectives shrink when active feeders fall below their peak (Andy 2026-11-10)
+  easeFloor: 0.25, // never below 25% of the designed size (and never below objStart)
 
   // Bloom
   bloomCheckMin: 5, // a check every 5 minutes once objectives hold

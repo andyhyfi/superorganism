@@ -72,6 +72,8 @@ export interface EpochResult {
   minted: number
   specimens: number
   players: number
+  feeders: number
+  scale: number
 }
 
 export interface State {
@@ -96,6 +98,8 @@ export interface State {
   volBurned: number
   eraEmitted: number[]
   burnOpen: boolean
+  scale: number
+  peakFeeders: number
   history: EpochResult[]
   events: GameEvent[]
 }
@@ -119,7 +123,7 @@ export function create(seed: number, t0: number, v: Values = VALUES): State {
   const st: State = {
     v, rng: seed | 0, t: t0, era: 0, epoch: 0, g: 0, level: 0, epochStart: t0, nextCheck: t0, holdSince: null,
     specs: {}, nextId: 0, loans: [], players: {}, released: 0, playerReleased: 0, treasury: 0, burned: 0,
-    volBurned: 0, eraEmitted: [0], burnOpen: false, history: [], events: [],
+    volBurned: 0, eraEmitted: [0], burnOpen: false, scale: 1, peakFeeders: 0, history: [], events: [],
   }
   startEpoch(st)
   return st
@@ -179,7 +183,8 @@ export function divChance(v: Values, m: number): number {
 export function objective(st: State): Objective {
   const v = st.v
   const lvl = st.level
-  const nReq = Math.round(v.objStart * v.objGrowth ** lvl)
+  // easing: objectives shrink with active feeders (st.scale <= 1), never below objStart
+  const nReq = Math.max(v.objStart, Math.round(v.objStart * v.objGrowth ** lvl * st.scale))
   const holdH = v.holdStartH + v.holdAddH * lvl
   const traits: Record<string, number> = {}
   const mutStart = st.era === 0 ? v.mutStartEra1 : 0
@@ -362,10 +367,15 @@ function endEpoch(st: State, bloomed: boolean) {
     bloomed = false
     st.events.push({ t: st.t, type: 'fail', era: st.era, epoch: st.epoch })
   }
+  const feeders = players.filter((p) => p.fedEpochs.includes(st.g)).length
   st.history.push({
     era: st.era, epoch: st.epoch, level: st.level, bloomed, lengthH: (st.t - st.epochStart) / H,
     targetH: v.targetHours[st.epoch], minted, specimens: Object.keys(st.specs).length, players: players.length,
+    feeders, scale: st.scale,
   })
+  // easing: next objectives follow this epoch's feeders against the peak so far
+  st.peakFeeders = Math.max(st.peakFeeders, feeders)
+  if (v.ease && st.peakFeeders > 0) st.scale = Math.max(v.easeFloor, Math.min(1, feeders / st.peakFeeders))
   // every epoch ends with all placed dENERGY back in players' balances
   for (const p of players) {
     p.dEnergy += p.stake
