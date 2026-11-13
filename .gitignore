@@ -23,3 +23,6 @@ contracts/deployments/local.json
 app/src/abi.ts
 app/src/local.json
 app/scripts/abi-node.mjs
+
+# Cloudflare local dev state
+.wrangler/
