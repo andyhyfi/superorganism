@@ -20,6 +20,11 @@ export interface Spec {
   shown: number[]
   miss: Record<string, number>
   depth: number
+  name: string | null
+  nameBase: string | null
+  color: number
+  colorAt: number
+  steer: number | null
 }
 
 export interface Player {
@@ -34,6 +39,8 @@ export interface Player {
   spent: number
   activated: number[]
   expK: Record<string, number>
+  sinks: string[]
+  sinkK: Record<string, number>
   wSum: number
   hrs: number
   lastT: number
@@ -58,6 +65,8 @@ export type GameEvent =
   | { t: number; type: 'activate'; player: string; mutation: number; cost: number }
   | { t: number; type: 'express'; player: string; mutation: number; spec: number; cost: number }
   | { t: number; type: 'burn'; player: string; amount: number }
+  | { t: number; type: 'sink'; player: string; sink: Sink; spec: number; cost: number; value: string | number }
+  | { t: number; type: 'sinkActivate'; player: string; sink: Sink; cost: number }
   | { t: number; type: 'bloom'; era: number; epoch: number; minted: number; treasury: number; shares: Record<string, number> }
   | { t: number; type: 'fail'; era: number; epoch: number }
   | { t: number; type: 'epoch'; era: number; epoch: number; level: number }
@@ -98,6 +107,7 @@ export interface State {
   volBurned: number
   eraEmitted: number[]
   burnOpen: boolean
+  nameSeq: Record<string, number>
   scale: number
   peakFeeders: number
   history: EpochResult[]
@@ -123,14 +133,17 @@ export function create(seed: number, t0: number, v: Values = VALUES): State {
   const st: State = {
     v, rng: seed | 0, t: t0, era: 0, epoch: 0, g: 0, level: 0, epochStart: t0, nextCheck: t0, holdSince: null,
     specs: {}, nextId: 0, loans: [], players: {}, released: 0, playerReleased: 0, treasury: 0, burned: 0,
-    volBurned: 0, eraEmitted: [0], burnOpen: false, scale: 1, peakFeeders: 0, history: [], events: [],
+    volBurned: 0, eraEmitted: [0], burnOpen: false, nameSeq: {}, scale: 1, peakFeeders: 0, history: [], events: [],
   }
   startEpoch(st)
   return st
 }
 
 function newSpec(st: State, depth = 0): Spec {
-  const s: Spec = { id: st.nextId++, mass: 0, claims: {}, expressed: [], shown: [], miss: {}, depth }
+  const s: Spec = {
+    id: st.nextId++, mass: 0, claims: {}, expressed: [], shown: [], miss: {}, depth,
+    name: null, nameBase: null, color: 0, colorAt: -Infinity, steer: null,
+  }
   st.specs[s.id] = s
   return s
 }
@@ -138,9 +151,11 @@ function newSpec(st: State, depth = 0): Spec {
 function startEpoch(st: State) {
   st.specs = {}
   st.loans = []
+  st.nameSeq = {}
   newSpec(st)
   for (const p of Object.values(st.players)) {
     p.expK = {}
+    p.sinkK = {}
     p.wSum = 0
     p.hrs = 0
     p.lastT = st.t
@@ -187,7 +202,7 @@ export function objective(st: State): Objective {
   const nReq = Math.max(v.objStart, Math.round(v.objStart * v.objGrowth ** lvl * st.scale))
   const holdH = v.holdStartH + v.holdAddH * lvl
   const traits: Record<string, number> = {}
-  const mutStart = st.era === 0 ? v.mutStartEra1 : 0
+  const mutStart = st.era === 0 ? v.mutStartEra1 : v.mutStartLater
   if (lvl >= mutStart && v.traitShare > 0 && st.released > 0) {
     const step = lvl - mutStart
     const nTypes = Math.min(1 + Math.floor(step / v.typesEvery), v.maxTypes)
@@ -279,7 +294,19 @@ function divide(st: State, s: Spec) {
     c.shown = [...s.shown]
     c.expressed = [...s.expressed]
     c.miss = { ...s.miss }
+    c.color = s.color
+    c.colorAt = s.colorAt
   }
+  // names: first child keeps the name, second gets the next number (Mira, Mira-2, Mira-3)
+  if (s.name && s.nameBase) {
+    kids[0].name = s.name
+    kids[0].nameBase = kids[1].nameBase = s.nameBase
+    const k = (st.nameSeq[s.nameBase.toLowerCase()] ?? 1) + 1
+    st.nameSeq[s.nameBase.toLowerCase()] = k
+    kids[1].name = `${s.nameBase}-${k}`
+  }
+  kids[0].steer = s.steer
+  for (const o of Object.values(st.specs)) if (o.steer === s.id) o.steer = kids[0].id
   for (const l of st.loans) {
     if (l.lender === s.id) l.lender = kids[0].id
     if (l.borrower === s.id) l.borrower = kids[0].id
@@ -298,7 +325,10 @@ function divide(st: State, s: Spec) {
 function loan(st: State, lender: Spec) {
   const ids = Object.keys(st.specs)
   if (ids.length < 2) return
-  const b = st.specs[ids[Math.floor(rand(st) * ids.length)]]
+  // a steered loan goes to the chosen specimen (if still there); size and length stay random
+  const steered = lender.steer !== null ? st.specs[lender.steer] : undefined
+  lender.steer = null
+  const b = steered ?? st.specs[ids[Math.floor(rand(st) * ids.length)]]
   if (b === lender) return
   const amt = lender.mass * uniform(st, st.v.loanShareMin, st.v.loanShareMax)
   lender.mass -= amt
@@ -433,7 +463,7 @@ export function join(st: State, id: string, now: number, referrer?: string) {
   const ref = referrer && referrer !== id && st.players[referrer] ? referrer : null
   st.players[id] = {
     id, granted: st.v.signup, dEnergy: st.v.signup, placed: {}, stake: 0, eEnergy: 0, bloom: 0, earned: 0,
-    spent: 0, activated: [], expK: {}, wSum: 0, hrs: 0, lastT: st.t, fedEpochs: [], referrer: ref,
+    spent: 0, activated: [], expK: {}, sinks: [], sinkK: {}, wSum: 0, hrs: 0, lastT: st.t, fedEpochs: [], referrer: ref,
     referralPaid: false, joined: st.t,
   }
   st.events.push({ t: st.t, type: 'join', player: id })
@@ -552,6 +582,78 @@ export function burn(st: State, id: string, amount: number, now: number) {
   st.burned += a
   st.volBurned += a
   st.events.push({ t: st.t, type: 'burn', player: id, amount: a })
+}
+
+// ------------------------------------------------------------------ optional sinks (demo: Name, Color, Steer a loan)
+export type Sink = 'name' | 'color' | 'steer'
+export const SINKS: Sink[] = ['name', 'color', 'steer']
+
+export function sinkOpen(st: State, sink: Sink): boolean {
+  return st.era > 0 || st.epoch >= (st.v.sinkOpen[sink] ?? Infinity)
+}
+
+export function sinkCost(st: State, id: string, sink: Sink) {
+  const n = st.players[id]?.sinkK[sink] ?? 0
+  return st.v.express * st.v.expressGrowth ** n * costMult(st)
+}
+
+function pay(st: State, p: Player, cost: number) {
+  if (p.bloom + EPS < cost) throw new RuleError('not enough BLOOM')
+  p.bloom = Math.max(0, p.bloom - cost)
+  p.spent += cost
+  st.burned += cost
+}
+
+export function activateSink(st: State, id: string, sink: Sink, now: number) {
+  tick(st, now)
+  const p = player(st, id)
+  if (!SINKS.includes(sink)) throw new RuleError('unknown sink')
+  if (!sinkOpen(st, sink)) throw new RuleError('not open yet')
+  if (p.sinks.includes(sink)) throw new RuleError('already active')
+  const cost = activateCost(st)
+  pay(st, p, cost)
+  p.sinks.push(sink)
+  st.events.push({ t: st.t, type: 'sinkActivate', player: id, sink, cost })
+}
+
+/** Use a sink on a specimen the player has a placement on. value: name text, color index, or borrower id. */
+export function useSink(st: State, id: string, sink: Sink, sid: number, value: string | number, now: number) {
+  tick(st, now)
+  const p = player(st, id)
+  if (!p.sinks.includes(sink)) throw new RuleError('not active')
+  if (!sinkOpen(st, sink)) throw new RuleError('not open yet')
+  const s = liveSpec(st, sid)
+  if (!(s.claims[id] > 0)) throw new RuleError('feed it first')
+  const cost = sinkCost(st, id, sink)
+  if (sink === 'name') {
+    const name = String(value)
+    if (!new RegExp(st.v.nameRule).test(name)) throw new RuleError('bad name')
+    const low = name.toLowerCase()
+    if (st.v.blockedNames.some((w) => low.includes(w))) throw new RuleError('name not allowed')
+    for (const o of Object.values(st.specs)) {
+      if (o !== s && o.nameBase?.toLowerCase() === low) throw new RuleError('name taken')
+    }
+    pay(st, p, cost)
+    s.name = name
+    s.nameBase = name
+    st.nameSeq[low] = 1
+  } else if (sink === 'color') {
+    const c = Number(value)
+    if (!Number.isInteger(c) || c < 0 || c >= st.v.colors) throw new RuleError('bad color')
+    if (c === s.color) throw new RuleError('already that color')
+    if (st.t - s.colorAt < st.v.recolorLockH * H) throw new RuleError('recolored recently')
+    pay(st, p, cost)
+    s.color = c
+    s.colorAt = st.t
+  } else {
+    const b = Number(value)
+    if (b === sid) throw new RuleError('cannot steer to itself')
+    liveSpec(st, b)
+    pay(st, p, cost)
+    s.steer = b
+  }
+  p.sinkK[sink] = (p.sinkK[sink] ?? 0) + 1
+  st.events.push({ t: st.t, type: 'sink', player: id, sink, spec: sid, cost, value })
 }
 
 // ------------------------------------------------------------------ checks

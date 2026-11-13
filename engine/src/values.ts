@@ -18,7 +18,8 @@ export const VALUES = {
   traitGrowth: 1.2317907892349786, // share x per level (capped at 1)
   typesEvery: 2, // one more mutation type every N levels
   maxTypes: 4,
-  mutStartEra1: 3, // era 1: mutation objectives from level 3 (epoch 4); later eras from level 0
+  mutStartEra1: 3, // era 1: mutation objectives from level 3 (epoch 4)
+  mutStartLater: 1, // eras 2+: easiest objectives need no mutation (Andy 2026-11-10), mutations from level 1
   kStartEra1: 2, // era 1: every specimen >= K energy from epoch 3; later eras from epoch 1
   kMin: 1,
   kGrowth: 1.5,
@@ -54,6 +55,13 @@ export const VALUES = {
   loanShareMin: 0.05,
   loanShareMax: 0.2,
   empty: 0.01, // at or below = empty
+
+  // optional sinks (demo set, Andy 2026-11-10). Costs follow the mutation price scale.
+  sinkOpen: { name: 1, color: 1, steer: 2 } as Record<string, number>, // era 1 epoch index they open (later eras: open)
+  colors: 8, // palette size (app species file)
+  recolorLockH: 1, // a specimen can be recolored once per hour
+  nameRule: '^[A-Za-z0-9_-]{3,16}$', // string so the state stays plain JSON
+  blockedNames: ['admin', 'evolution', 'official', 'moderator'], // placeholder list; demo server keeps the full one
 
   // dENERGY / eENERGY (demo)
   eRatePerYear: 0.1, // eENERGY per placed dENERGY per year; open, era mechanic later

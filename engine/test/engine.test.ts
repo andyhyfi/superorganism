@@ -2,7 +2,7 @@
 import fs from 'node:fs'
 import {
   create, join, feed, draw, drawAll, activate, express, burn, tick, check, status, objective, epochMint,
-  divChance, expressCost, activateCost, RuleError, H, type State,
+  divChance, expressCost, activateCost, activateSink, useSink, sinkCost, RuleError, H, type State,
 } from '../src/engine.ts'
 import { VALUES } from '../src/values.ts'
 
@@ -177,6 +177,83 @@ const fx = JSON.parse(fs.readFileSync(new URL('./sim-parity.json', import.meta.u
   const b0 = st.players.a.bloom
   burn(st, 'a', 10, 0)
   ok(close(st.players.a.bloom, b0 - 10) && close(st.volBurned, 10), 'burn removes BLOOM')
+  check(st)
+}
+
+// ---------------------------------------------------------------- eras 2+: easiest objectives need no mutation
+{
+  const st = create(1, 0)
+  st.era = 1; st.released = 1
+  st.level = 0
+  ok(Object.keys(objective(st).traits).length === 0, 'era 2 easiest objectives: no mutation')
+  st.level = 1
+  ok(Object.keys(objective(st).traits).length === 1, 'era 2 second step: mutation objective')
+}
+
+// ---------------------------------------------------------------- optional sinks
+{
+  const st = create(17, 0)
+  join(st, 'a', 0); join(st, 'b', 0)
+  st.players.a.bloom = 200; st.players.a.earned = 200; st.players.b.bloom = 200; st.players.b.earned = 200
+  st.playerReleased = 400; st.released = 400 / 0.85; st.treasury = st.released - 400
+  throws(() => activateSink(st, 'a', 'name', 0), 'not open yet', 'name closed in era 1 epoch 1')
+  st.epoch = 1
+  activateSink(st, 'a', 'name', 0)
+  activateSink(st, 'a', 'color', 0)
+  throws(() => activateSink(st, 'a', 'steer', 0), 'not open yet', 'steer closed until era 1 epoch 3')
+  throws(() => activateSink(st, 'a', 'name', 0), 'already active', 'sink activates once')
+  ok(close(st.players.a.bloom, 200 - 2 * activateCost(st)), 'sink activation burns its cost')
+  const s0 = Number(Object.keys(st.specs)[0])
+  throws(() => useSink(st, 'a', 'name', s0, 'Mira', 0), 'feed it first', 'name only specimens you fed')
+  feed(st, 'a', s0, 30, 0)
+  const sid = Number(Object.keys(st.players.a.placed)[0])
+  throws(() => useSink(st, 'a', 'name', sid, 'x', 0), 'bad name', 'name too short refused')
+  throws(() => useSink(st, 'a', 'name', sid, 'has space', 0), 'bad name', 'name with space refused')
+  throws(() => useSink(st, 'a', 'name', sid, 'theAdmin', 0), 'name not allowed', 'blocked word refused')
+  const c1 = sinkCost(st, 'a', 'name')
+  const b1 = st.players.a.bloom
+  useSink(st, 'a', 'name', sid, 'Mira', 0)
+  ok(st.specs[sid].name === 'Mira' && close(st.players.a.bloom, b1 - c1), 'name set, cost burned')
+  ok(close(sinkCost(st, 'a', 'name'), c1 * VALUES.expressGrowth), 'next name costs more')
+  // division: Mira, Mira-2
+  const kids = (() => { for (let i = 0; i < 400 && st.specs[sid]; i++) feed(st, 'a', sid, 2, 0); return Object.values(st.specs).filter((x) => x.nameBase === 'Mira') })()
+  ok(kids.length >= 2 && kids.some((k) => k.name === 'Mira') && kids.some((k) => k.name === 'Mira-2'), 'children inherit name: Mira, Mira-2')
+  // uniqueness
+  feed(st, 'b', s0 in st.specs ? s0 : kids[0].id, 5, 0)
+  st.players.b.sinks.push('name')
+  const other = Object.values(st.specs).find((x) => (x.claims.b ?? 0) > 0)!
+  if (other.nameBase !== 'Mira') throws(() => useSink(st, 'b', 'name', other.id, 'mira', 0), 'name taken', 'names unique (any case)')
+  // color
+  const cs = kids[0].id
+  useSink(st, 'a', 'color', cs, 3, 0)
+  ok(st.specs[cs].color === 3, 'color set')
+  throws(() => useSink(st, 'a', 'color', cs, 4, 0), 'recolored recently', 'recolor locked for 1 hour')
+  throws(() => useSink(st, 'a', 'color', cs, 99, 0), 'bad color', 'color outside palette refused')
+  check(st)
+}
+{
+  // steer: next loan from the specimen goes to the chosen one
+  const st = create(19, 0)
+  join(st, 'a', 0)
+  st.epoch = 2; st.players.a.bloom = 100; st.players.a.earned = 100; st.playerReleased = 100; st.released = 100 / 0.85; st.treasury = st.released - 100
+  activateSink(st, 'a', 'steer', 0)
+  const root = Number(Object.keys(st.specs)[0])
+  feed(st, 'a', root, 1, 0)
+  // make a second specimen
+  let guard = 0
+  while (Object.keys(st.specs).length < 3 && guard++ < 500) { const x = Object.keys(st.specs).map(Number)[0]; feed(st, 'a', x, 5, 0) }
+  const ids = Object.keys(st.specs).map(Number)
+  const lender = ids.find((i) => (st.specs[i].claims.a ?? 0) > 0)!
+  const target = ids.find((i) => i !== lender)!
+  useSink(st, 'a', 'steer', lender, target, 0)
+  ok(st.specs[lender].steer === target, 'steer stored on the lender')
+  throws(() => useSink(st, 'a', 'steer', lender, lender, 0), 'cannot steer to itself', 'steer to itself refused')
+  const before = st.events.filter((e) => e.type === 'loan').length
+  for (let i = 0; i < 300 && st.events.filter((e) => e.type === 'loan').length === before && st.specs[lender]; i++) feed(st, 'a', lender, 0.5, 0)
+  const ln = st.events.filter((e) => e.type === 'loan').slice(before)[0]
+  ok(ln !== undefined && ln.type === 'loan', 'a loan happened in the steer test')
+  if (ln && ln.type === 'loan' && ln.lender === lender) ok(ln.borrower === target, 'steered loan goes to the chosen specimen')
+  else ok(st.specs[lender] === undefined || st.specs[lender].steer === target, 'steer kept until the lender itself lends')
   check(st)
 }
 
