@@ -39,14 +39,14 @@ export function LineageMap({ nodes, selected, colorsOf, onPick, onClose }: {
   const layout = useMemo(() => {
     const kids = new Map<number, number[]>()
     for (const n of nodes) {
-      if (!n || n.id === 0) continue
+      if (!n || n.parent === n.id) continue
       const list = kids.get(n.parent) ?? []
       list.push(n.id)
       kids.set(n.parent, list)
     }
     // the selected specimen's line of descent
     const path = new Set<number>()
-    for (let n: ChainNode | undefined = nodes[selected]; n; n = n.id === 0 ? undefined : nodes[n.parent]) path.add(n.id)
+    for (let n: ChainNode | undefined = nodes[selected]; n; n = n.parent === n.id ? undefined : nodes[n.parent]) path.add(n.id)
     // tidy tree: leaves left to right in birth order, a parent centered over its children
     const leaves = nodes.filter(n => n && !n.split).length || 1
     const depthMax = nodes.reduce((a, n) => (n ? Math.max(a, n.depth) : a), 0)
@@ -61,7 +61,8 @@ export function LineageMap({ nodes, selected, colorsOf, onPick, onClose }: {
       pos.set(id, { x: x + PAD, y: depth * row + PAD })
       return x
     }
-    if (nodes[0]) place(0, 0)
+    const root = nodes.find(n => n && n.parent === n.id)
+    if (root) place(root.id, 0)
     const max = nodes.reduce((a, n) => (n && !n.split && n.energy > a ? n.energy : a), 1n)
     const grow = Math.min(col / COL, row / ROW)
     return { kids, path, pos, w: Math.max(1, leaf - 1) * col + PAD * 2, h: maxDepth * row + PAD * 2, max, grow }

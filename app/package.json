@@ -9,10 +9,13 @@
     "typecheck": "tsc --noEmit",
     "abi": "node scripts/sync-abi.mjs",
     "activity": "node scripts/activity.mjs",
-    "test:machines": "node --experimental-strip-types --no-warnings scripts/machines.test.ts"
+    "test:machines": "node --experimental-strip-types --no-warnings scripts/machines.test.ts",
+    "demo": "DEMO=1 vite",
+    "demo:lan": "DEMO=1 LAN=1 vite"
   },
   "dependencies": {
     "@fontsource/capriola": "^5.3.0",
+    "@simplewebauthn/browser": "14.0.0",
     "lucide-react": "^1.68.0",
     "pixi.js": "^8.22.0",
     "react": "19.3.1",

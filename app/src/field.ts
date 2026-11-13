@@ -156,6 +156,21 @@ export class Field {
     this.resize()
   }
 
+  /** Who "you" are (demo: set after sign-in); your specks are marked again. */
+  setYou(you: string) {
+    this.you = you.toLowerCase()
+    for (const n of this.nodes.values()) for (const b of n.bubbles) b.mine = b.user === this.you
+  }
+
+  /** Removes every cell at once (demo: a new epoch starts a new colony). The caller fades the view. */
+  clear() {
+    this.nodes.clear()
+    this.links = []
+    this.flows = []
+    this.selected = null
+    this.fitAll()
+  }
+
   /** Resolves once the GPU renderer is up. */
   get ready() {
     return this.paint.init
@@ -221,6 +236,7 @@ export class Field {
       if (v) {
         v.total = total
         v.mid = mid
+        if (c.sp !== undefined) v.sp = c.sp
       } else if (!this.isPendingChild(c.id)) {
         this.nodes.set(c.id, this.makeNode(c, chain, total, mid))
       }
@@ -336,12 +352,12 @@ export class Field {
 
   private makeNode(c: ChainNode, chain: ChainNode[], total: number, mid: number): VNode {
     const parent = chain[c.parent]
-    const pv = c.id === 0 ? null : this.nodes.get(c.parent)
+    const pv = c.parent === c.id ? null : this.nodes.get(c.parent)
     const hue = this.hueOf(c, chain)
     const path: number[] = []
-    for (let n = c; n.id !== 0; n = chain[n.parent]) path.unshift(n.id)
+    for (let n = c; n && n.parent !== n.id; n = chain[n.parent]) path.unshift(n.id)
     return {
-      sp: speciesOf(path), variant: c.id, lit: 0, dim: total <= EMPTY ? 1 : 0,
+      sp: c.sp ?? speciesOf(path), variant: c.id, lit: 0, dim: total <= EMPTY ? 1 : 0,
       id: c.id,
       x: pv ? pv.x + rand(-20, 20) : 0,
       y: pv ? pv.y + rand(-20, 20) : 0,
@@ -351,7 +367,7 @@ export class Field {
       phase: rand(0, TAU),
       spin: (Math.random() < 0.5 ? -1 : 1) * rand(0.6, 1.2),
       bubbles: [],
-      alpha: c.id === 0 || !parent ? 1 : 0,
+      alpha: c.parent === c.id || !parent ? 1 : 0,
       splitting: null,
     }
   }
@@ -361,7 +377,7 @@ export class Field {
     let hue = 214
     let n = c
     const path: number[] = []
-    while (n.id !== 0) {
+    while (n && n.parent !== n.id) {
       path.push(n.id)
       n = chain[n.parent]
     }

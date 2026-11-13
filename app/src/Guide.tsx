@@ -20,7 +20,7 @@ export function markGuideSeen() {
 /** 1 ppm = 0.0001%: the fee rule as a short percentage. */
 const pct = (ppm: number) => `${(ppm / 1e4).toFixed(4).replace(/0+$/, '').replace(/\.$/, '')}%`
 
-export function Guide({ step, feePpm, catalyst, onStep, onClose, onDone, side }: {
+export function Guide({ step, feePpm, catalyst, onStep, onClose, onDone, side, cards = GUIDE }: {
   step: number
   feePpm: number
   catalyst: string
@@ -28,8 +28,8 @@ export function Guide({ step, feePpm, catalyst, onStep, onClose, onDone, side }:
   onClose: () => void
   onDone: () => void // last card: close the guide and return to the living colony
   side: boolean // desktop side panel open: center over the colony, not the panel
+  cards?: GuideCard[] // demo: the set without the fee card
 }) {
-  const cards: GuideCard[] = GUIDE
   const last = step === cards.length - 1
   const fill = (s: string) => s.replace('{fee}', pct(feePpm)).replace('{catalyst}', catalyst)
 

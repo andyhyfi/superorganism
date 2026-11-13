@@ -1,0 +1,48 @@
+/* Demo-only placeholders. Andy's design replaces these. */
+.money .bloom, .v.bloom { color: #ff9ad5; }
+.obj .k { flex: none; width: 46%; }
+.obj-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--fill-2); overflow: hidden; }
+.obj-bar > span { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.9s var(--ease); }
+.obj-bar > span.ok { background: var(--gold); box-shadow: 0 0 8px rgba(255, 204, 92, 0.6); }
+.epochs { display: flex; gap: 8px; padding: 14px 16px; }
+.epochs .ep { width: 14px; height: 14px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.3); }
+.epochs .ep.bloomed { background: #ff9ad5; border-color: #ff9ad5; box-shadow: 0 0 8px #ff9ad5aa; }
+.pill-btn { height: 32px; padding: 0 12px; border-radius: 999px; border: 0; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.pill-btn:disabled { opacity: 0.4; cursor: default; }
+.k.dim, .guide-body.dim { color: var(--text-2); }
+.name-in { flex: 1; min-width: 0; height: 32px; border-radius: 8px; border: 0; padding: 0 10px; margin-right: 10px;
+  background: var(--fill); color: var(--text); font: inherit; }
+.swatches { gap: 4px; flex-wrap: wrap; }
+.swatches .sw { border: 0; background: none; padding: 3px; border-radius: 50%; cursor: pointer; }
+.swatches .sw.on { box-shadow: 0 0 0 1.5px var(--gold); }
+.swatches .sw:disabled:not(.on) { opacity: 0.45; }
+.swatches .v { margin-left: auto; }
+
+.signin {
+  position: absolute; z-index: 50; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(360px, calc(100vw - 2 * var(--gap))); padding: 22px 20px 18px; border-radius: 22px;
+}
+.signin.membrane { position: absolute; }
+.signin-buttons { display: grid; gap: 10px; margin-top: 18px; }
+.signin .btn { width: 100%; }
+.test-join { display: flex; gap: 10px; align-items: center; margin-top: 4px; }
+.test-join input { flex: 1; min-width: 0; height: 32px; border-radius: 8px; border: 0; padding: 0 10px; background: var(--fill); color: var(--text); font: inherit; }
+
+.seg-row { display: flex; gap: 6px; margin: 6px 0 12px; }
+.seg-row button { flex: 1; height: 30px; border-radius: 8px; border: 0; background: var(--fill); color: var(--text); font-size: 12px; cursor: pointer; }
+.seg-row button.on { background: var(--accent); color: #fff; }
+
+/* new epoch: the old colony fades out, the new one fades in */
+.field { transition: opacity 0.9s ease; }
+.field.epoch-fade { opacity: 0; }
+
+/* the Bloom moment (placeholder): a soft pink light that rises and fades */
+.bloom-flash {
+  position: absolute; inset: 0; z-index: 30; pointer-events: none; display: grid; place-content: center; text-align: center;
+  background: radial-gradient(circle at 50% 50%, rgba(255, 154, 213, 0.28), transparent 60%);
+  animation: bloom-in 5.2s var(--ease) both;
+}
+.bloom-word { font-family: var(--font-display); font-size: clamp(48px, 12vw, 96px); color: #ffd6ee; font-synthesis: none;
+  text-shadow: 0 0 30px rgba(255, 154, 213, 0.8); }
+.bloom-mine { margin-top: 8px; font-size: 17px; color: var(--text); }
+@keyframes bloom-in { 0% { opacity: 0; transform: scale(0.96); } 18% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; } }

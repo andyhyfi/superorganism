@@ -5,7 +5,7 @@
 // runs every transition. Map of all machines (explicit and local): app/STATE.md.
 
 // ------------------------------------------------------------------ transaction (feed / draw)
-export type TxKind = 'deposit' | 'withdraw' | 'withdrawAll'
+export type TxKind = 'deposit' | 'withdraw' | 'withdrawAll' | 'game' // game: demo actions (mutations, sinks)
 export type TxStage = 'approving' | 'sending' | 'confirming'
 export type Tx = { phase: 'idle' } | { phase: TxStage; kind: TxKind }
 export type TxEvent =

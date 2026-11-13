@@ -13,7 +13,9 @@ export interface ColonyEnv {
   ADMIN_KEY?: string
 }
 
-interface Clock { gameT0: number; realT0: number; speed: number }
+interface Clock { gameT0: number; realT0: number; speed: number; bots?: number; botNext?: number }
+
+const BOT_EVERY_MS = 2500 // demo activity bots act this often (real time)
 
 const MAX_EVENTS_PER_MESSAGE = 500
 
@@ -31,8 +33,11 @@ export class Colony extends DurableObject<ColonyEnv> {
     const c = row('clock')
     const s = row('state')
     this.clock = c ? JSON.parse(c) : { gameT0: Date.now(), realT0: Date.now(), speed: 1 }
-    this.st = s ? JSON.parse(s) : create(Date.now() & 0x7fffffff, this.clock.gameT0)
-    if (!s) this.save()
+    const saved: State | null = s ? JSON.parse(s) : null
+    // a colony saved by an older server (no family tree) starts fresh: demo state never carries over
+    const usable = saved !== null && typeof saved.tree === 'object' && saved.tree !== null
+    this.st = usable ? saved : create(Date.now() & 0x7fffffff, this.clock.gameT0)
+    if (!usable) this.save()
   }
 
   // ---------------------------------------------------------------- time and storage
@@ -61,18 +66,63 @@ export class Colony extends DurableObject<ColonyEnv> {
     const deadline = st.epochStart + v.targetHours[st.epoch] * v.failFactor * 3_600_000
     let next = Math.min(st.nextCheck, deadline)
     for (const l of st.loans) next = Math.min(next, l.end)
-    const realWait = Math.max(500, (next - this.now()) / this.clock.speed)
+    let realWait = Math.max(500, (next - this.now()) / this.clock.speed)
+    if (this.clock.bots) realWait = Math.min(realWait, Math.max(200, (this.clock.botNext ?? 0) - Date.now()))
     await this.ctx.storage.setAlarm(Date.now() + realWait)
   }
 
   async alarm() {
     tick(this.st, this.now())
+    if (this.clock.bots && Date.now() >= (this.clock.botNext ?? 0)) {
+      this.runBots()
+      this.clock.botNext = Date.now() + BOT_EVERY_MS
+    }
     await this.commit()
+  }
+
+  /** Demo activity: test players feed, sometimes draw, and buy the mutations the objectives ask for. */
+  private runBots() {
+    const st = this.st
+    const t = this.now()
+    const bots = Object.keys(st.players).filter((id) => id.startsWith('bot-'))
+    const want = this.clock.bots ?? 0
+    for (let i = bots.length; i < want; i++) {
+      const id = `bot-auto${i}`
+      if (!st.players[id]) { join(st, id, t); bots.push(id) }
+    }
+    const r = () => Math.random()
+    const specs = () => Object.values(st.specs)
+    const acts = Math.max(1, Math.round(want / 4))
+    for (let k = 0; k < acts; k++) {
+      const id = bots[Math.floor(r() * bots.length)]
+      const p = st.players[id]
+      if (!p) continue
+      try {
+        const s = status(st)
+        const short = Object.keys(s.short).map(Number)
+        if (short.length && p.bloom > 0 && r() < 0.5) {
+          const m = short[Math.floor(r() * short.length)]
+          if (!p.activated.includes(m)) { if (p.bloom >= activateCost(st)) activate(st, id, m, t); continue }
+          const q = specs().filter((x) => x.mass >= st.v.objMin && !x.shown.includes(m) && !x.expressed.includes(m))
+          if (q.length && p.bloom >= expressCost(st, id, m)) express(st, id, m, q[Math.floor(r() * q.length)].id, t)
+          continue
+        }
+        const placed = Object.keys(p.placed)
+        if (placed.length && r() < 0.08) { draw(st, id, Number(placed[0]), p.placed[placed[0]], t); continue }
+        if (p.dEnergy < 1) continue
+        // feed the smaller specimens more often, so the colony spreads instead of one giant
+        const list = specs().sort((a, b) => a.mass - b.mass)
+        const s0 = list[Math.floor(r() ** 2 * list.length)]
+        if (s0) feed(st, id, s0.id, Math.min(p.dEnergy, 5 + Math.floor(r() * 60)), t)
+      } catch (e) {
+        if (!(e instanceof RuleError)) throw e
+      }
+    }
   }
 
   // ---------------------------------------------------------------- live updates
   private broadcast(events: GameEvent[]) {
-    const msg = JSON.stringify({ type: 'events', events: events.slice(-MAX_EVENTS_PER_MESSAGE), summary: this.summary() })
+    const msg = JSON.stringify({ type: 'events', events: events.slice(-MAX_EVENTS_PER_MESSAGE), ...this.view() })
     for (const ws of this.ctx.getWebSockets()) {
       try { ws.send(msg) } catch { /* closed */ }
     }
@@ -91,10 +141,13 @@ export class Colony extends DurableObject<ColonyEnv> {
     const st = this.st
     const s = status(st)
     return {
-      t: st.t, speed: this.clock.speed, era: st.era, epoch: st.epoch, level: st.level, players: Object.keys(st.players).length,
+      t: st.t, now: this.now(), realNow: Date.now(), speed: this.clock.speed, bots: this.clock.bots ?? 0,
+      era: st.era, epoch: st.epoch, level: st.level, players: Object.keys(st.players).length,
+      root: Number(Object.keys(st.tree).sort((a, b) => Number(a) - Number(b))[0] ?? 0),
       objective: { nReq: s.nReq, qualifying: s.qualifying, holdH: s.holdH, traits: s.traits, short: s.short, kMin: s.kMin, empties: s.empties, ok: s.ok },
       holdSince: st.holdSince, epochStart: st.epochStart, deadline: st.epochStart + st.v.targetHours[st.epoch] * st.v.failFactor * 3_600_000,
       sinks: Object.fromEntries(SINKS.map((k) => [k, sinkOpen(st, k)])), burnOpen: st.burnOpen,
+      rules: { divCap: st.v.divCap, divMid: st.v.divMid, objMin: st.v.objMin, colors: st.v.colors, nameRule: st.v.nameRule },
     }
   }
 
@@ -103,9 +156,9 @@ export class Colony extends DurableObject<ColonyEnv> {
     const st = this.st
     const specs = Object.values(st.specs).map((s) => ({
       id: s.id, mass: s.mass, depth: s.depth, name: s.name, color: s.color, shown: s.shown, expressed: s.expressed,
-      feeders: Object.keys(s.claims).length,
+      claims: s.claims, steer: s.steer,
     }))
-    return { summary: this.summary(), specs, loans: st.loans, history: st.history.slice(-30) }
+    return { summary: this.summary(), specs, tree: st.tree, loans: st.loans, history: st.history.slice(-30) }
   }
 
   private me(player: string) {
@@ -113,7 +166,7 @@ export class Colony extends DurableObject<ColonyEnv> {
     if (!p) return null
     const st = this.st
     return {
-      id: p.id, dEnergy: p.dEnergy, placed: p.placed, stake: p.stake, eEnergy: p.eEnergy, bloom: p.bloom,
+      id: p.id, dEnergy: p.dEnergy, placed: p.placed, stake: p.stake, eEnergy: p.eEnergy, bloom: p.bloom, earned: p.earned,
       activated: p.activated, sinks: p.sinks,
       costs: {
         activate: activateCost(st),
@@ -213,10 +266,18 @@ export class Colony extends DurableObject<ColonyEnv> {
       const speed = num(body.speed)
       if (speed < 1 || speed > 10_000) throw new BadRequest('speed 1-10000')
       const g = this.now()
-      this.clock = { gameT0: g, realT0: Date.now(), speed }
+      this.clock = { ...this.clock, gameT0: g, realT0: Date.now(), speed }
       tick(this.st, g)
       await this.commit()
       return json({ speed })
+    }
+    if (path === '/api/admin/bots') {
+      const n = int(body.count)
+      if (n < 0 || n > 200) throw new BadRequest('count 0-200')
+      this.clock.bots = n
+      this.clock.botNext = Date.now()
+      await this.commit()
+      return json({ bots: n })
     }
     if (path === '/api/admin/bot') {
       // test players for activity bots and tests (no passkey). Same rules as everyone else.
@@ -233,7 +294,7 @@ export class Colony extends DurableObject<ColonyEnv> {
     }
     if (path === '/api/admin/reset') {
       const g = Date.now()
-      this.clock = { gameT0: g, realT0: g, speed: this.clock.speed }
+      this.clock = { gameT0: g, realT0: g, speed: this.clock.speed, bots: this.clock.bots, botNext: g }
       this.st = create(g & 0x7fffffff, g)
       for (const p of this.auth.players()) join(this.st, p, g)
       await this.commit()

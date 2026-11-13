@@ -7,6 +7,12 @@ export function nameOf(id: number): string {
   return named.get(id) ?? `<unnamed_${String(id).padStart(3, '0')}>`
 }
 
+/** Replace every name at once (demo server: names come with the colony). */
+export function setNames(m: Map<number, string>) {
+  named.clear()
+  for (const [k, v] of m) named.set(k, v)
+}
+
 /** For the naming mutation, later. */
 export function setName(id: number, name: string) {
   named.set(id, name)

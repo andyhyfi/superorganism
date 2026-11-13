@@ -11,6 +11,7 @@ import { Rolling } from './Rolling'
 import { InkMark } from './InkMark'
 import { LineageIcon, LineageMap } from './Lineage'
 import { createPortal } from 'react-dom'
+import { unit } from './unit'
 
 const usdNum = (x: bigint) => Number(x) / 1e6
 
@@ -89,7 +90,7 @@ export function NodeTab(p: DeepProps) {
       </div>
       <div className="amount membrane">
         <input value={p.amount} onChange={e => p.setAmount(cleanAmount(e.target.value))} inputMode="decimal" aria-label={t('act.amount')} placeholder="0" />
-        <span className="unit">USDC</span>
+        <span className="unit">{unit()}</span>
         {units > 0n && <button className="clear" aria-label={t('act.clear')} onClick={() => p.setAmount('')}><X size={14} strokeWidth={2.5} /></button>}
       </div>
       <div className="quick">
@@ -109,12 +110,14 @@ export function NodeTab(p: DeepProps) {
         )}
       </div>
 
+      {p.nodeExtra?.(s.id)}
+
       <Gate id="cell.divideChance" c={c}>
         <div className="section-title">{t('cell.divideChance')}</div>
         <div className="group membrane">
           <Row k={t('cell.divideChance')} v={fmtPct(s.split)} />
           <Gate id="cell.fillCheck" c={c}><Row k={t('cell.fillCheck')} v={fmtPct(s.roll)} /></Gate>
-          <Gate id="cell.divideOdds" c={c}><Row k={t('cell.divideOdds')} v={`1 in ${p.odds}`} /></Gate>
+          {!p.demo && <Gate id="cell.divideOdds" c={c}><Row k={t('cell.divideOdds')} v={`1 in ${p.odds}`} /></Gate>}
         </div>
       </Gate>
 
@@ -143,8 +146,8 @@ export function NodeTab(p: DeepProps) {
 
       <div className="section-title">&nbsp;</div>
       <div className="group membrane">
-        <Row k={t('cell.deposits')} v={`${fmtUsd(s.total)} USDC`} />
-        <Row rule k={t('cell.fee')} v={`${((node?.traits.feePpm ?? 0) / 1e4).toFixed(4)}%`} />
+        <Row k={t('cell.deposits')} v={`${fmtUsd(s.total)} ${unit()}`} />
+        {!p.demo && <Row rule k={t('cell.fee')} v={`${((node?.traits.feePpm ?? 0) / 1e4).toFixed(4)}%`} />}
         <Row k={t('cell.minimum')} v="1" />
         {p.limits.maxDeposit > 0n && <Row k={t('cell.maximum')} v={fmtUsd(p.limits.maxDeposit)} />}
         {p.limits.eventFee > 0n && <Row rule k={t('cell.eventFee')} v={fmtUsd(p.limits.eventFee)} hint={t('cell.eventFeeHint')} />}
@@ -177,9 +180,10 @@ export function NetworkTab(p: DeepProps) {
   return (
     <>
       <div className="hero">
-        <div className="big"><Rolling value={total} /><small>USDC</small></div>
+        <div className="big"><Rolling value={total} /><small>{unit()}</small></div>
         <div className="meta">{meta}</div>
       </div>
+      {p.networkExtra}
 
       <Gate id="net.sort" c={c}>
         <div className="segmented membrane" role="tablist" style={{ marginBottom: 12 }}>
@@ -205,7 +209,7 @@ export function NetworkTab(p: DeepProps) {
 
       <Gate id="net.fees" c={c}>
         <div className="section-title">&nbsp;</div>
-        <div className="group membrane"><Row k={t('net.fees')} v={`${fmtUsd(p.fees)} USDC`} /></div>
+        <div className="group membrane"><Row k={t('net.fees')} v={`${fmtUsd(p.fees)} ${unit()}`} /></div>
       </Gate>
     </>
   )
@@ -221,8 +225,9 @@ export function YoursTab(p: DeepProps) {
   return (
     <>
       <div className="hero">
-        <div className="big"><Rolling value={sum} /><small>USDC</small></div>
+        <div className="big"><Rolling value={sum} /><small>{unit()}</small></div>
       </div>
+      {p.yoursExtra}
       {!held.length && !mine.length ? (
         <Empty />
       ) : !held.length ? null : (

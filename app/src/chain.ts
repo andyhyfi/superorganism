@@ -44,6 +44,7 @@ export type ChainNode = {
   borrowed: bigint // energy held on loan from other cells
   energy: bigint // what the cell shows: own not lent out, plus borrowed
   rollFill: bigint // what the split roll uses: borrowed counts up to the cell's own (at most 50%)
+  sp?: number // demo: the specimen's color (species index), set by the Color sink
 }
 
 /** One active loan part: energy from `lender` now held by `holder`. */

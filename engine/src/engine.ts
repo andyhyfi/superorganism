@@ -112,6 +112,8 @@ export interface State {
   peakFeeders: number
   history: EpochResult[]
   events: GameEvent[]
+  /** This epoch's family tree: specimen id -> parent id (the epoch's first specimen is its own parent). */
+  tree: Record<string, number>
 }
 
 export interface Objective { nReq: number; holdH: number; traits: Record<string, number> }
@@ -133,18 +135,19 @@ export function create(seed: number, t0: number, v: Values = VALUES): State {
   const st: State = {
     v, rng: seed | 0, t: t0, era: 0, epoch: 0, g: 0, level: 0, epochStart: t0, nextCheck: t0, holdSince: null,
     specs: {}, nextId: 0, loans: [], players: {}, released: 0, playerReleased: 0, treasury: 0, burned: 0,
-    volBurned: 0, eraEmitted: [0], burnOpen: false, nameSeq: {}, scale: 1, peakFeeders: 0, history: [], events: [],
+    volBurned: 0, eraEmitted: [0], burnOpen: false, nameSeq: {}, scale: 1, peakFeeders: 0, history: [], events: [], tree: {},
   }
   startEpoch(st)
   return st
 }
 
-function newSpec(st: State, depth = 0): Spec {
+function newSpec(st: State, depth = 0, parent?: number): Spec {
   const s: Spec = {
     id: st.nextId++, mass: 0, claims: {}, expressed: [], shown: [], miss: {}, depth,
     name: null, nameBase: null, color: 0, colorAt: -Infinity, steer: null,
   }
   st.specs[s.id] = s
+  st.tree[s.id] = parent ?? s.id
   return s
 }
 
@@ -152,6 +155,7 @@ function startEpoch(st: State) {
   st.specs = {}
   st.loans = []
   st.nameSeq = {}
+  st.tree = {}
   newSpec(st)
   for (const p of Object.values(st.players)) {
     p.expK = {}
@@ -287,7 +291,7 @@ function rollShow(st: State, s: Spec) {
 function divide(st: State, s: Spec) {
   rollShow(st, s)
   delete st.specs[s.id]
-  const kids = [newSpec(st, s.depth + 1), newSpec(st, s.depth + 1)] as const
+  const kids = [newSpec(st, s.depth + 1, s.id), newSpec(st, s.depth + 1, s.id)] as const
   for (const c of kids) {
     c.mass = s.mass / 2
     for (const [pid, a] of Object.entries(s.claims)) c.claims[pid] = a / 2

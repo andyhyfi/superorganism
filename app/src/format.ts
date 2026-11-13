@@ -1,4 +1,4 @@
-import { usd } from './chain'
+const usd = (x: bigint) => Number(x) / 1e6
 
 export const fmtUsd = (x: bigint | number) => {
   const v = typeof x === 'bigint' ? usd(x) : x

@@ -6,7 +6,7 @@ import type { Address } from 'viem'
 import type { ChainNode, LoanLink, NetEvent } from './chain'
 import { NodeTab, NetworkTab, YoursTab, FeedTab } from './Tabs'
 import { attachSheetDrag } from './sheetDrag'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { t, networkActivityExists } from './reveal'
 import './deep.css'
 import './cell.css'
@@ -45,6 +45,11 @@ export type DeepProps = {
   limits: { maxDeposit: bigint; maxPerUser: bigint; eventFee: bigint }
   heldNet: bigint
   netDeposited: bigint
+  // play-money demo: no fees; extra game sections in each tab (placeholders until Andy's design)
+  demo?: boolean
+  nodeExtra?: (id: number) => ReactNode
+  networkExtra?: ReactNode
+  yoursExtra?: ReactNode
 }
 
 const TABS = ([
